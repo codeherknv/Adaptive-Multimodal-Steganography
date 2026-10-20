@@ -1,13 +1,16 @@
 """Pydantic schemas for API request and response validation."""
+
 from datetime import datetime, timezone
-from typing import Dict, List, Literal
-from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional
+from pydantic import BaseModel, Field, model_validator
+
 
 class HealthResponse(BaseModel):
     """Safe health check response containing no sensitive system information."""
     status: Literal["healthy", "degraded", "unhealthy"] = "healthy"
     version: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 class ModuleStatus(BaseModel):
     """Actual progress status of a specific engineering module."""
@@ -17,9 +20,145 @@ class ModuleStatus(BaseModel):
     description: str
     capabilities: List[str] = Field(default_factory=list)
 
+
 class SystemStatusResponse(BaseModel):
     """Overview of project implementation status across development phases."""
     project_name: str
     version: str
     current_phase: int
     modules: Dict[str, ModuleStatus]
+
+
+# ---------------------------------------------------------
+# Cryptographic Schemas (Phase 2)
+# ---------------------------------------------------------
+
+class EncryptRequest(BaseModel):
+    """Request payload for AES-256-GCM encryption."""
+    plaintext: str = Field(
+        ...,
+        max_length=1_000_000,
+        description="Plaintext string message to be encrypted (max 1 MB)."
+    )
+    key: Optional[str] = Field(
+        None,
+        description="Optional 32-byte AES key (hex or base64). If omitted, a fresh random key is generated."
+    )
+    password: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=1024,
+        description="Optional passphrase to derive a key via PBKDF2-HMAC-SHA256 (used only if key is omitted)."
+    )
+    salt: Optional[str] = Field(
+        None,
+        description="Optional salt for password key derivation (hex or base64). If omitted, a random 16-byte salt is generated."
+    )
+    encoding: Literal["base64", "hex"] = Field(
+        "base64",
+        description="Encoding format for keys, nonces, and output envelope ('base64' or 'hex')."
+    )
+
+    @model_validator(mode="after")
+    def check_key_and_password(self):
+        if self.key and self.password:
+            raise ValueError("Provide either 'key' or 'password', not both.")
+        return self
+
+
+class EncryptResponse(BaseModel):
+    """Response containing ciphertext envelope and key management metadata."""
+    key: str = Field(
+        ...,
+        description="The 32-byte AES-256 key in requested encoding format. Keep separate from carrier files!"
+    )
+    key_encoding: Literal["base64", "hex"] = Field(
+        ...,
+        description="Encoding format used for key, nonce, and envelope."
+    )
+    salt: Optional[str] = Field(
+        None,
+        description="16-byte salt in requested encoding if PBKDF2 password derivation was used."
+    )
+    envelope_version: int = Field(
+        1,
+        description="Binary envelope framing version."
+    )
+    nonce: str = Field(
+        ...,
+        description="Fresh 96-bit (12-byte) initialization vector / nonce in requested encoding."
+    )
+    ciphertext: str = Field(
+        ...,
+        description="Encrypted payload including 128-bit authentication tag in requested encoding."
+    )
+    envelope: str = Field(
+        ...,
+        description="Self-contained serialized binary envelope in requested encoding (ready for carrier embedding)."
+    )
+    envelope_bytes_length: int = Field(
+        ...,
+        description="Exact byte length of the binary envelope."
+    )
+    plaintext_bytes_length: int = Field(
+        ...,
+        description="Byte length of the original plaintext."
+    )
+    warning: str = Field(
+        "Educational Key Workflow: Keep this key separate from carrier media. Anyone possessing this key can decrypt the secret payload.",
+        description="Educational security advisory."
+    )
+
+
+class DecryptRequest(BaseModel):
+    """Request payload for authenticating and decrypting a ciphertext envelope."""
+    envelope: str = Field(
+        ...,
+        description="Serialized encrypted envelope in base64 or hex format."
+    )
+    key: Optional[str] = Field(
+        None,
+        description="32-byte AES key in base64 or hex format."
+    )
+    password: Optional[str] = Field(
+        None,
+        description="Passphrase used during PBKDF2 key derivation (requires matching salt)."
+    )
+    salt: Optional[str] = Field(
+        None,
+        description="16-byte salt used during PBKDF2 password derivation (required if password is used)."
+    )
+    encoding: Literal["base64", "hex"] = Field(
+        "base64",
+        description="Encoding format of the supplied envelope and key/salt ('base64' or 'hex')."
+    )
+
+    @model_validator(mode="after")
+    def check_key_or_password(self):
+        if not self.key and not self.password:
+            raise ValueError("Must provide either 'key' or 'password' to decrypt.")
+        if self.key and self.password:
+            raise ValueError("Provide either 'key' or 'password', not both.")
+        if self.password and not self.salt:
+            raise ValueError("Salt is required when decrypting with a derived password.")
+        return self
+
+
+class DecryptResponse(BaseModel):
+    """Response containing authenticated plaintext message."""
+    plaintext: str = Field(
+        ...,
+        description="Authenticated and decrypted plaintext string."
+    )
+    authenticated: bool = Field(
+        True,
+        description="Cryptographic integrity verification status (True indicates valid GCM auth tag)."
+    )
+    envelope_version: int = Field(
+        ...,
+        description="Version of the decrypted envelope."
+    )
+    plaintext_bytes_length: int = Field(
+        ...,
+        description="Exact byte length of the recovered plaintext."
+    )

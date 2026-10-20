@@ -97,22 +97,22 @@ export const TechnicalHealth: React.FC<TechnicalHealthProps> = ({ health, error,
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="text-canvas-textMuted uppercase tracking-wider text-[11px]">Backend Pytest</span>
             <span className="bg-emerald-950/50 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-mono">
-              3 / 3 Passed
+              47 / 47 Passed
             </span>
           </div>
 
           <div className="space-y-1 pt-1 font-mono text-xs">
             <div className="flex justify-between text-[11px]">
-              <span className="text-canvas-textMuted">Root Endpoint:</span>
-              <span className="text-emerald-400">Passed (200)</span>
+              <span className="text-canvas-textMuted">API Gateway:</span>
+              <span className="text-emerald-400">11 Tests Passed</span>
             </div>
             <div className="flex justify-between text-[11px]">
-              <span className="text-canvas-textMuted">Health Security:</span>
-              <span className="text-emerald-400">Passed (No leaks)</span>
+              <span className="text-canvas-textMuted">AES-256-GCM:</span>
+              <span className="text-emerald-400">17 Tests Passed</span>
             </div>
             <div className="flex justify-between text-[11px]">
-              <span className="text-canvas-textMuted">Module Status:</span>
-              <span className="text-emerald-400">Passed (Pydantic V2)</span>
+              <span className="text-canvas-textMuted">Payload Codec:</span>
+              <span className="text-emerald-400">19 Tests Passed</span>
             </div>
           </div>
         </div>

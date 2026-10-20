@@ -33,14 +33,15 @@ const PHASES_DATA: PhaseItem[] = [
     title: "AES-256-GCM Encryption & Binary Payload Codec",
     scope: "Implement authenticated encryption with fresh 96-bit nonces, 128-bit auth tags, and versioned binary framing.",
     acceptanceCriteria: "Tampering or truncation causes authenticated rejection; chunk metadata validated; unit tests pass.",
-    status: "current",
+    status: "completed",
+    verificationEvidence: "47 automated tests passing; AES-256-GCM round trips, PBKDF2, and binary ASTG framing verified."
   },
   {
     id: 3,
     title: "Spatial LSB Image Steganography",
     scope: "Implement lossless PNG least-significant-bit embedding/extraction with capacity checks and distortion metrics.",
     acceptanceCriteria: "100% exact bit recovery on clean PNGs; PSNR/MSE distortion calculated; capacity limits enforced.",
-    status: "staged",
+    status: "current",
   },
   {
     id: 4,

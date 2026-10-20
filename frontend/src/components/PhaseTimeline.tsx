@@ -1,0 +1,223 @@
+import React, { useState } from 'react';
+import { ChevronDown, ShieldCheck } from 'lucide-react';
+import { StatusBadge, StatusType } from './StatusBadge';
+
+interface PhaseItem {
+  id: number;
+  title: string;
+  scope: string;
+  acceptanceCriteria: string;
+  status: StatusType;
+  verificationEvidence?: string;
+}
+
+const PHASES_DATA: PhaseItem[] = [
+  {
+    id: 0,
+    title: "Environment & Toolchain Inspection",
+    scope: "Verify Python 3.13, Node 22, npm 10, Git CLI, and port availability on Windows workspace.",
+    acceptanceCriteria: "Tool versions detected and documented; working tree clean; ports 8000 and 5173 verified available.",
+    status: "completed",
+    verificationEvidence: "Python 3.13.2, pip 24.3.1, Node v22.16.0, Git 2.51.0 confirmed via shell inspection."
+  },
+  {
+    id: 1,
+    title: "Monorepo Scaffolding & API Baseline",
+    scope: "Initialize FastAPI backend, React/Vite/TS frontend, dependencies, .gitignore, and health/status endpoints.",
+    acceptanceCriteria: "Both servers start independently; API reverse proxy operational; pytest suite passing with zero failures.",
+    status: "completed",
+    verificationEvidence: "Pytest passing (3 tests); Vite build verified (0 errors); /api/health and /api/status returning 200 OK."
+  },
+  {
+    id: 2,
+    title: "AES-256-GCM Encryption & Binary Payload Codec",
+    scope: "Implement authenticated encryption with fresh 96-bit nonces, 128-bit auth tags, and versioned binary framing.",
+    acceptanceCriteria: "Tampering or truncation causes authenticated rejection; chunk metadata validated; unit tests pass.",
+    status: "current",
+  },
+  {
+    id: 3,
+    title: "Spatial LSB Image Steganography",
+    scope: "Implement lossless PNG least-significant-bit embedding/extraction with capacity checks and distortion metrics.",
+    acceptanceCriteria: "100% exact bit recovery on clean PNGs; PSNR/MSE distortion calculated; capacity limits enforced.",
+    status: "staged",
+  },
+  {
+    id: 4,
+    title: "Frontend-Backend Roundtrip Integration",
+    scope: "Integrate React Sender and Receiver workflows with backend encryption and PNG embedding endpoints.",
+    acceptanceCriteria: "End-to-end roundtrip: plaintext → encrypt → embed in PNG → extract → decrypt → verify.",
+    status: "staged",
+  },
+  {
+    id: 5,
+    title: "PCM WAV Audio Steganography",
+    scope: "Implement 16-bit PCM WAV audio embedding and extraction while preserving RIFF/WAV audio headers.",
+    acceptanceCriteria: "Exact extraction verified; SNR distortion measured; sample rate and channel structure preserved.",
+    status: "staged",
+  },
+  {
+    id: 6,
+    title: "Frame-Based Video Steganography",
+    scope: "Video container processing using OpenCV/FFmpeg with frame-level spatial embedding and payload framing.",
+    acceptanceCriteria: "Frame index synchronization; container format preservation; document compression limitations.",
+    status: "staged",
+  },
+  {
+    id: 7,
+    title: "Fixed Multimodal Payload Allocation & Recovery",
+    scope: "Implement deterministic fixed chunk distribution across image, audio, and video carrier sets.",
+    acceptanceCriteria: "Multi-carrier reassembly handles missing/out-of-order chunks safely; authenticated verification holds.",
+    status: "staged",
+  },
+  {
+    id: 8,
+    title: "Steganalysis Dataset Pipeline & ML Baselines",
+    scope: "Extract first- and higher-order statistical features from cover/stego media and train scikit-learn classifiers.",
+    acceptanceCriteria: "Zero-leakage source partitioning; Confusion matrix, ROC-AUC, precision, recall, and F1 measured.",
+    status: "staged",
+  },
+  {
+    id: 9,
+    title: "Quality, Robustness & Runtime Benchmarking",
+    scope: "Implement automated benchmark laboratory measuring PSNR, SNR, BER, recovery reliability, and processing time.",
+    acceptanceCriteria: "Channel transformation experiments (recompression/noise); reproducible metrics recorded.",
+    status: "staged",
+  },
+  {
+    id: 10,
+    title: "Empirical Adaptive Allocation Policy",
+    scope: "Develop an informed allocation algorithm that balances capacity, distortion tolerance, and detectability risk.",
+    acceptanceCriteria: "Clear target objective function; transparent rule-based policy compared against fixed baseline.",
+    status: "staged",
+  },
+  {
+    id: 11,
+    title: "Comparative Allocation & Ablation Analysis",
+    scope: "Execute matched-condition benchmarks comparing fixed vs. adaptive allocation across varied payload densities.",
+    acceptanceCriteria: "Ablation of feature sets; honest reporting of trade-offs, gains, and negative results.",
+    status: "staged",
+  },
+  {
+    id: 12,
+    title: "Comprehensive Evaluation Dashboard & CSV Export",
+    scope: "Interactive visualization in Recharts for ROC curves, distortion vs capacity curves, and CSV data export.",
+    acceptanceCriteria: "All charts derived from real stored experiment records; export files verified.",
+    status: "staged",
+  },
+  {
+    id: 13,
+    title: "Security Review, Final Research Report & Defense",
+    scope: "Full automated test suite regression, vulnerability analysis, architecture documentation, and presentation materials.",
+    acceptanceCriteria: "Zero unresolved test failures; verified literature citations; structured thesis/defense slides.",
+    status: "staged",
+  }
+];
+
+export const PhaseTimeline: React.FC = () => {
+  const [showAllPhases, setShowAllPhases] = useState<boolean>(false);
+
+  // By default, display through Phase 4 to maintain compact view, with toggle to inspect full 14-phase curriculum
+  const displayedPhases = showAllPhases ? PHASES_DATA : PHASES_DATA.slice(0, 5);
+
+  return (
+    <section className="border border-canvas-border bg-canvas-surface rounded-lg p-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-canvas-border">
+        <div>
+          <h2 className="text-sm font-semibold text-canvas-textPrimary tracking-tight">
+            Engineering Roadmap & Phase Execution
+          </h2>
+          <p className="text-xs text-canvas-textMuted">
+            Sequential 14-phase development roadmap. Progress is recorded through verifiable automated tests.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAllPhases(!showAllPhases)}
+          className="inline-flex items-center space-x-1.5 text-xs font-mono text-canvas-textSecondary hover:text-canvas-textPrimary bg-canvas-elevated hover:bg-zinc-800 px-2.5 py-1 rounded border border-canvas-border transition-colors self-start sm:self-auto"
+        >
+          <span>{showAllPhases ? "Collapse Staged Phases" : `Show All 14 Phases (${PHASES_DATA.length})`}</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllPhases ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* Structured Vertical Progress List */}
+      <div className="relative border-l border-zinc-800 ml-3.5 pl-5 space-y-4 py-1">
+        {displayedPhases.map((phase) => {
+          const isCompleted = phase.status === 'completed';
+          const isCurrent = phase.status === 'current';
+
+          return (
+            <div key={phase.id} className="relative group">
+              {/* Dot on vertical line */}
+              <div 
+                className={`absolute -left-[27px] top-1.5 w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                  isCompleted 
+                    ? 'bg-emerald-950 border-emerald-500 text-emerald-400' 
+                    : isCurrent 
+                      ? 'bg-sky-950 border-sky-400 text-sky-400 ring-2 ring-sky-900/40' 
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-600'
+                }`}
+              >
+                {isCompleted && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+              </div>
+
+              {/* Phase Card */}
+              <div 
+                className={`border rounded-md p-3.5 transition-colors ${
+                  isCurrent 
+                    ? 'border-sky-900/60 bg-sky-950/10' 
+                    : isCompleted 
+                      ? 'border-canvas-border bg-canvas-elevated/40' 
+                      : 'border-canvas-borderSubtle bg-canvas-elevated/20 opacity-80'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-xs font-semibold text-canvas-textPrimary">
+                      Phase {phase.id}: {phase.title}
+                    </span>
+                  </div>
+                  <div>
+                    <StatusBadge 
+                      status={phase.status} 
+                      label={
+                        isCompleted 
+                          ? "Completed & Verified" 
+                          : isCurrent 
+                            ? "Next Implementation Target" 
+                            : "Staged"
+                      }
+                    />
+                  </div>
+                </div>
+
+                <p className="mt-1.5 text-xs text-canvas-textSecondary leading-relaxed">
+                  {phase.scope}
+                </p>
+
+                {phase.verificationEvidence && (
+                  <div className="mt-2.5 pt-2 border-t border-canvas-borderSubtle flex items-start space-x-2 text-[11px] font-mono text-emerald-400/90">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>Evidence: {phase.verificationEvidence}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!showAllPhases && (
+        <div className="pt-1 text-center">
+          <button
+            onClick={() => setShowAllPhases(true)}
+            className="text-xs font-mono text-canvas-textMuted hover:text-canvas-textSecondary transition-colors"
+          >
+            + 9 additional staged phases in sequential roadmap (Click to expand)
+          </button>
+        </div>
+      )}
+    </section>
+  );
+};

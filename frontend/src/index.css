@@ -4,6 +4,12 @@
 
 @layer base {
   body {
-    @apply bg-cyber-dark text-slate-100 font-sans;
+    @apply bg-canvas-base text-canvas-textPrimary font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  ::selection {
+    background-color: rgba(56, 189, 248, 0.25);
+    color: #f0f1f5;
   }
 }

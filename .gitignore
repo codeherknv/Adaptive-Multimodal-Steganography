@@ -33,6 +33,8 @@ dist/
 dist-ssr/
 *.local
 *.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Environment variables & local secrets
 .env

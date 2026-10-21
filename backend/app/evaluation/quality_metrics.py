@@ -4,12 +4,14 @@ This module provides standard fidelity metrics for evaluating steganographic dis
 1. Mean Squared Error (MSE):
    Quantifies the average squared pixel-channel difference between cover and stego media.
 2. Peak Signal-to-Noise Ratio (PSNR):
-   Measures distortion in decibels (dB) relative to the maximum possible signal power.
-   Higher PSNR indicates lower perceptual distortion. Conventionally, PSNR > 40 dB is
-   considered imperceptible to human visual perception.
+   Measures image fidelity in decibels (dB) relative to the maximum possible signal power.
+   Higher PSNR indicates lower numerical distortion. While PSNR > 40 dB is conventionally
+   cited as visually inconspicuous to human perception, it measures visual fidelity only
+   and does NOT guarantee security or resistance against statistical or ML-based steganalysis.
 3. Structural Similarity Index (SSIM):
-   Perceptual metric evaluating luminance, contrast, and structural consistency.
-   Ranges from -1.0 to +1.0 (where 1.0 represents perfect identity).
+   Evaluates luminance, contrast, and structural consistency between image pairs.
+   Ranges from -1.0 to +1.0 (where 1.0 represents perfect structural identity).
+   Like PSNR, high SSIM indicates visual fidelity, not cryptographic or steganalytic security.
 """
 
 import math

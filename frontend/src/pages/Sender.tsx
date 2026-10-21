@@ -407,8 +407,8 @@ export const Sender: React.FC = () => {
                 </div>
               </div>
 
-              <p className="text-[10px] text-zinc-500 pt-1">
-                PSNR &gt; 40 dB indicates the stego image is mathematically imperceptible to the human eye.
+              <p className="text-[10px] text-zinc-500 pt-1 leading-relaxed">
+                <span className="text-zinc-400 font-medium">Research Note:</span> PSNR &gt; 40 dB and SSIM ≈ 1.0 measure visual fidelity against the cover carrier; they do not prove security or resistance against statistical or machine-learning steganalysis.
               </p>
             </div>
 

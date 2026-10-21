@@ -102,9 +102,15 @@ Steganographic quality assessment relies on objective mathematical distortion me
    Quantifies the average energy of the steganographic noise. For 1-bit LSB replacement where payload bits match carrier bits with probability $p \approx 0.5$, the expected MSE across modified subpixels is $\approx 0.5 / (\text{Total Pixels})$.
 2. **PSNR (Peak Signal-to-Noise Ratio)**:
    Logarithmic ratio of maximum signal power ($255^2$) to MSE. In academic literature:
-   - $\text{PSNR} > 40\text{ dB}$: Distortion is considered imperceptible to the human visual system (HVS).
-   - $\text{PSNR} > 60\text{ dB}$: High fidelity, typical for low-density LSB steganography.
-   - $\text{PSNR} = \infty$: Exact identity ($\text{MSE} = 0$).
+   - $\text{PSNR} > 40\text{ dB}$: Distortion is conventionally considered inconspicuous to the human visual system (HVS).
+   - $\text{PSNR} > 60\text{ dB}$: High numerical fidelity, typical for low-density spatial LSB steganography.
+   - $\text{PSNR} = \infty$: Exact numerical identity ($\text{MSE} = 0$).
 3. **SSIM (Structural Similarity Index)**:
-   Unlike MSE/PSNR which measure absolute pixel errors, SSIM models the human visual perception of structural information (luminance, contrast, and structure). An SSIM score $> 0.999$ confirms that edge structures and textures are perfectly preserved.
+   Unlike MSE/PSNR which measure absolute pixel intensity errors, SSIM models the human visual perception of structural information (luminance, contrast, and structure). An SSIM score $> 0.999$ confirms that edge structures and textures are well preserved.
+
+### 4. Image Fidelity vs. Steganalytic Undetectability
+A fundamental principle in steganography research is the distinction between **carrier fidelity** and **steganalytic undetectability**:
+- **Fidelity Metrics (PSNR & SSIM)**: Measure how closely the stego image mimics the cover image in terms of human perception and raw signal power.
+- **Steganalysis Resistance**: Statistical and machine-learning steganalysis tools (e.g., sample pair analysis, Chi-square attacks, SPAM features) do not inspect images visually. Instead, they exploit statistical anomalies caused by LSB flipping (such as imbalances in Pairs of Values / PoVs or pixel co-occurrence matrices).
+- **Core Principle**: High PSNR (> 40 dB) is a prerequisite for unobtrusive transmission, but it does **not** guarantee invisibility or prove resistance against steganalysis. Evaluating true detectability requires empirical steganalysis experiments (planned for Phase 8).
 

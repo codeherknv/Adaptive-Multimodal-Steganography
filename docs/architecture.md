@@ -207,36 +207,38 @@ To quantify image alteration after steganographic embedding, the evaluation engi
    $$\text{PSNR} = 10 \cdot \log_{10}\left(\frac{\text{MAX}_I^2}{\text{MSE}}\right) = 20 \cdot \log_{10}\left(\frac{255}{\sqrt{\text{MSE}}}\right)$$
    - Expressed in decibels (dB). Higher values denote less distortion.
    - For identical images ($\text{MSE} = 0$), the implementation returns `math.inf` (rendered as `null` in JSON per RFC 8259).
-   - In spatial 1-bit LSB steganography, typical PSNR values exceed $50\text{ dB}$, which is visually undetectable.
+   - In spatial 1-bit LSB steganography, typical PSNR values exceed $50\text{ dB}$, indicating high visual fidelity.
+   - **Critical Research Note**: High PSNR (> 40 dB) and high SSIM (≈ 1.0) measure visual similarity relative to the cover carrier. They do **not** guarantee invisibility or prove resistance to statistical or machine-learning steganalysis (e.g. sample pair analysis, SPAM feature classification), which exploit higher-order statistical artifacts.
 
 3. **Structural Similarity Index Measure (SSIM)**:
    $$\text{SSIM}(x, y) = \frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}$$
-   Evaluates luminance, contrast, and structural correlation. Returns a float in $[-1.0, 1.0]$, where $1.0$ represents identical structural appearance.
+   Evaluates luminance, contrast, and structural correlation. Returns a float in $[-1.0, 1.0]$, where $1.0$ represents identical structural appearance. Like PSNR, SSIM measures image fidelity, not steganalytic security.
 
 ---
 
 ## 6. Image Steganography API Endpoints
 
 ### 1. `POST /api/image/capacity`
-- **Request**: Multipart form data with `cover_image` (PNG file).
+- **Request**: Multipart form data with `image` (PNG file).
 - **Response**:
   ```json
   {
     "width": 512,
     "height": 512,
     "channels": 3,
-    "format": "PNG",
-    "total_carrier_bytes": 786432,
+    "color_mode": "RGB",
+    "embeddable_channels_per_pixel": 3,
     "total_carrier_bits": 786432,
-    "max_payload_bytes": 98290,
-    "overhead_bytes": 14
+    "total_carrier_bytes": 98304,
+    "header_overhead_bytes": 14,
+    "max_usable_payload_bytes": 98290
   }
   ```
 
 ### 2. `POST /api/image/embed`
 - **Request**: Multipart form data:
-  - `cover_image`: Cover PNG file.
-  - `envelope_data`: Encrypted envelope string.
+  - `image`: Cover PNG carrier file.
+  - `envelope`: Encrypted envelope string.
   - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
 - **Response**:
   ```json
@@ -256,7 +258,7 @@ To quantify image alteration after steganographic embedding, the evaluation engi
 
 ### 3. `POST /api/image/extract`
 - **Request**: Multipart form data:
-  - `stego_image`: Stego PNG file.
+  - `image`: Stego PNG carrier file.
   - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
 - **Response**:
   ```json

@@ -63,21 +63,21 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/crypto/encrypt" -Method Post -
 
 ### 2. Check Image Capacity (`POST /api/image/capacity`)
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/image/capacity" -F "cover_image=@sample_cover.png"
+curl -X POST "http://127.0.0.1:8000/api/image/capacity" -F "image=@sample_cover.png"
 ```
 
 ### 3. Embed Encrypted Envelope in PNG (`POST /api/image/embed`)
 ```powershell
 curl -X POST "http://127.0.0.1:8000/api/image/embed" \
-  -F "cover_image=@sample_cover.png" \
-  -F "envelope_data=<ENVELOPE_BASE64_STRING>" \
+  -F "image=@sample_cover.png" \
+  -F "envelope=<ENVELOPE_BASE64_STRING>" \
   -F "encoding=base64"
 ```
 
 ### 4. Extract Envelope from Stego PNG (`POST /api/image/extract`)
 ```powershell
 curl -X POST "http://127.0.0.1:8000/api/image/extract" \
-  -F "stego_image=@stego_output.png" \
+  -F "image=@stego_output.png" \
   -F "encoding=base64"
 ```
 

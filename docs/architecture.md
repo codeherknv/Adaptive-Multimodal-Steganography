@@ -156,9 +156,125 @@ When secret data is distributed across heterogeneous carrier media (image, audio
 
 ---
 
-## 4. Test Execution & Verification
+## 4. Image Steganography Architecture (`image_stego.py`)
 
-To execute the complete automated test suite (including health, status, crypto, and codec tests):
+Spatial Least Significant Bit (LSB) steganography is implemented for lossless PNG carrier media using Pillow and NumPy.
+
+### 1. Carrier Processing & Channel Selection:
+- **Format Constraint**: PNG (lossless deflate compression). Lossy formats such as JPEG will destroy LSB modifications during discrete cosine transform quantization and are rejected.
+- **Color Mode Handling**:
+  - `RGB` images: All 3 channels (`R, G, B`) are utilized for embedding.
+  - `RGBA` images: Only the first 3 color channels (`[:, :, :3]`) are modified. The Alpha channel (`channel 3`) is strictly preserved untouched to prevent unintended transparency artifacts.
+  - `L` (Grayscale): Converted to RGB or processed according to single-channel conventions.
+
+### 2. Binary Framing Header Specification (`PSTG`, 14 Bytes, Big-Endian):
+To prevent relying on ambiguous EOF markers or trailing sentinel byte sequences (which can collide with pseudorandom ciphertext), each image embeds a structured 14-byte binary header:
+
+```
++--------------------+----------------+-----------------+------------------------------------+
+| Field              | Size / Type    | Byte Offset     | Description                        |
++--------------------+----------------+-----------------+------------------------------------+
+| Magic Signature    | 4 bytes        | 0 - 3           | Fixed ASCII b"PSTG"                |
+| Format Version     | 1 byte uint8   | 4               | 0x01                               |
+| Reserved           | 1 byte uint8   | 5               | 0x00                               |
+| Payload Length (L) | 4 bytes uint32 | 6 - 9           | Exact byte length of inner payload |
+| Payload CRC32      | 4 bytes uint32 | 10 - 13         | IEEE 802.3 CRC32 of inner payload  |
++--------------------+----------------+-----------------+------------------------------------+
+| Inner Payload Data | L bytes        | 14 - (14+L-1)   | Encrypted ASTG envelope or chunk   |
++--------------------+----------------+-----------------+------------------------------------+
+```
+
+### 3. Bit Embedding & Extraction Convention:
+- **Ordering**: Row-major, column-major, channel-major (`Red`, then `Green`, then `Blue`).
+- **Bit Packing**: Most-significant-bit first (MSB-to-LSB, bit 7 down to bit 0) per byte.
+- **Carrier Modification**:
+  $$\text{pixel}' = (\text{pixel} \mathbin{\&} \text{0xFE}) \mathbin{|} \text{bit}$$
+  *(Implemented using `np.uint8(0xFE)` to prevent integer underflow in NumPy 2.x).*
+- **Capacity Formula**:
+  $$\text{Max Usable Payload Bytes} = \left\lfloor \frac{H \times W \times 3}{8} \right\rfloor - 14$$
+
+---
+
+## 5. Distortion & Perceptual Quality Metrics (`quality_metrics.py`)
+
+To quantify image alteration after steganographic embedding, the evaluation engine implements three standard objective metrics:
+
+1. **Mean Squared Error (MSE)**:
+   $$\text{MSE} = \frac{1}{H \times W \times C} \sum_{y=0}^{H-1} \sum_{x=0}^{W-1} \sum_{c=0}^{C-1} [I_1(y, x, c) - I_2(y, x, c)]^2$$
+   Measures average squared pixel intensity difference. $\text{MSE} = 0.0$ indicates identical images.
+
+2. **Peak Signal-to-Noise Ratio (PSNR)**:
+   $$\text{PSNR} = 10 \cdot \log_{10}\left(\frac{\text{MAX}_I^2}{\text{MSE}}\right) = 20 \cdot \log_{10}\left(\frac{255}{\sqrt{\text{MSE}}}\right)$$
+   - Expressed in decibels (dB). Higher values denote less distortion.
+   - For identical images ($\text{MSE} = 0$), the implementation returns `math.inf` (rendered as `null` in JSON per RFC 8259).
+   - In spatial 1-bit LSB steganography, typical PSNR values exceed $50\text{ dB}$, which is visually undetectable.
+
+3. **Structural Similarity Index Measure (SSIM)**:
+   $$\text{SSIM}(x, y) = \frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}$$
+   Evaluates luminance, contrast, and structural correlation. Returns a float in $[-1.0, 1.0]$, where $1.0$ represents identical structural appearance.
+
+---
+
+## 6. Image Steganography API Endpoints
+
+### 1. `POST /api/image/capacity`
+- **Request**: Multipart form data with `cover_image` (PNG file).
+- **Response**:
+  ```json
+  {
+    "width": 512,
+    "height": 512,
+    "channels": 3,
+    "format": "PNG",
+    "total_carrier_bytes": 786432,
+    "total_carrier_bits": 786432,
+    "max_payload_bytes": 98290,
+    "overhead_bytes": 14
+  }
+  ```
+
+### 2. `POST /api/image/embed`
+- **Request**: Multipart form data:
+  - `cover_image`: Cover PNG file.
+  - `envelope_data`: Encrypted envelope string.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "status": "success",
+    "stego_image_data_url": "data:image/png;base64,iVBORw0KG...",
+    "payload_bytes": 51,
+    "carrier_bytes_used": 520,
+    "capacity_utilization_percent": 0.052,
+    "quality_metrics": {
+      "mse": 0.00066,
+      "psnr": 79.93,
+      "ssim": 0.99999
+    }
+  }
+  ```
+
+### 3. `POST /api/image/extract`
+- **Request**: Multipart form data:
+  - `stego_image`: Stego PNG file.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "status": "success",
+    "envelope_data": "<EXTRACTED_ENVELOPE_STRING>",
+    "encoding": "base64",
+    "payload_bytes": 51,
+    "framing_version": 1,
+    "crc32_verified": true
+  }
+  ```
+
+---
+
+## 7. Test Execution & Verification
+
+To execute the complete automated test suite (including health, status, crypto, codec, image stego, and quality metrics):
 
 ```powershell
 cd backend
@@ -166,4 +282,4 @@ cd backend
 pytest -v
 ```
 
-All 47 unit and integration tests pass with zero errors.
+All **65 unit and integration tests** pass with zero errors.

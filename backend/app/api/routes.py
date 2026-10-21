@@ -1,11 +1,12 @@
-"""FastAPI route definitions for health, system status, and cryptographic operations."""
+"""FastAPI route definitions for health, status, crypto, and image steganography."""
 
+import base64
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status
+from typing import Literal
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.config import settings
 from app.core.crypto_utils import (
-    KEY_SIZE_BYTES,
     generate_key,
     derive_key_from_password,
     validate_key,
@@ -21,6 +22,16 @@ from app.core.crypto_utils import (
     MalformedEnvelopeError,
     DecryptionError,
 )
+from app.media.image_stego import (
+    get_image_capacity,
+    embed_in_image,
+    extract_from_image,
+    save_image_to_png_bytes,
+    load_image_as_rgb_array,
+    InsufficientCapacityError,
+    CarrierExtractionError,
+    UnsupportedImageFormatError,
+)
 from app.schemas import (
     HealthResponse,
     SystemStatusResponse,
@@ -29,6 +40,10 @@ from app.schemas import (
     EncryptResponse,
     DecryptRequest,
     DecryptResponse,
+    ImageCapacityResponse,
+    ImageQualityMetricsResponse,
+    ImageEmbedResponse,
+    ImageExtractResponse,
 )
 
 router = APIRouter()
@@ -95,9 +110,16 @@ async def get_system_status() -> SystemStatusResponse:
         "image_stego": ModuleStatus(
             name="Spatial LSB Image Steganography",
             phase=3,
-            status="pending",
-            description="PNG LSB embedding and extraction with capacity checks and distortion metrics.",
-            capabilities=[]
+            status="implemented",
+            description="Lossless PNG LSB embedding and extraction with length-prefixed binary framing and quality metrics.",
+            capabilities=[
+                "Lossless PNG Spatial LSB",
+                "14-Byte Binary PSTG Framing",
+                "RGB Channel Preservation (Alpha untouched)",
+                "CRC32 Pre-Check Integrity",
+                "Capacity Estimation",
+                "MSE, PSNR, SSIM Distortion Metrics"
+            ]
         ),
         "audio_stego": ModuleStatus(
             name="PCM WAV Audio Steganography",
@@ -139,7 +161,7 @@ async def get_system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=2,
+        current_phase=3,
         modules=modules
     )
 
@@ -162,7 +184,6 @@ async def encrypt_message(req: EncryptRequest) -> EncryptResponse:
     salt_bytes = None
     salt_encoded = None
 
-    # 1. Determine key source
     if req.key:
         try:
             key_bytes = bytes_from_base64(req.key) if req.encoding == "base64" else bytes_from_hex(req.key)
@@ -178,20 +199,15 @@ async def encrypt_message(req: EncryptRequest) -> EncryptResponse:
         except InvalidKeyError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     else:
-        # Generate fresh random 256-bit key
         key_bytes = generate_key()
 
-    # 2. Encrypt plaintext
     plaintext_bytes = req.plaintext.encode("utf-8")
     try:
         envelope_bytes = encrypt(plaintext_bytes, key_bytes)
-    except CryptoError as e:
+    except CryptoError:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Encryption failed.")
 
-    # 3. Unpack envelope components for granular response
     version, nonce_bytes, ciphertext_with_tag, _ = unpack_envelope(envelope_bytes)
-
-    # 4. Encode according to requested format
     encode_func = bytes_to_base64 if req.encoding == "base64" else bytes_to_hex
 
     return EncryptResponse(
@@ -220,7 +236,6 @@ async def encrypt_message(req: EncryptRequest) -> EncryptResponse:
 async def decrypt_message(req: DecryptRequest) -> DecryptResponse:
     decode_func = bytes_from_base64 if req.encoding == "base64" else bytes_from_hex
 
-    # 1. Parse envelope bytes
     try:
         envelope_bytes = decode_func(req.envelope)
     except InvalidKeyError as e:
@@ -229,7 +244,6 @@ async def decrypt_message(req: DecryptRequest) -> DecryptResponse:
             detail=f"Envelope decode error: {str(e)}"
         )
 
-    # 2. Determine key source
     if req.key:
         try:
             key_bytes = decode_func(req.key)
@@ -253,7 +267,6 @@ async def decrypt_message(req: DecryptRequest) -> DecryptResponse:
             detail="Either 'key' or 'password' must be supplied."
         )
 
-    # 3. Authenticate and decrypt envelope
     try:
         plaintext_bytes = decrypt(envelope_bytes, key_bytes)
         version, _, _, _ = unpack_envelope(envelope_bytes)
@@ -273,7 +286,6 @@ async def decrypt_message(req: DecryptRequest) -> DecryptResponse:
             detail="Decryption failed: integrity check failed or invalid key."
         )
 
-    # 4. Decode plaintext as UTF-8
     try:
         plaintext_str = plaintext_bytes.decode("utf-8")
     except UnicodeDecodeError:
@@ -287,4 +299,169 @@ async def decrypt_message(req: DecryptRequest) -> DecryptResponse:
         authenticated=True,
         envelope_version=version,
         plaintext_bytes_length=len(plaintext_bytes)
+    )
+
+
+# ---------------------------------------------------------
+# Image Steganography Endpoints (Phase 3)
+# ---------------------------------------------------------
+
+@router.post(
+    "/image/capacity",
+    response_model=ImageCapacityResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Estimate Image Carrier Payload Capacity",
+    description="Inspects an uploaded PNG image and calculates its maximum usable LSB payload capacity."
+)
+async def check_image_capacity(
+    image: UploadFile = File(..., description="PNG image carrier file")
+) -> ImageCapacityResponse:
+    contents = await image.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    try:
+        capacity_info = get_image_capacity(contents)
+        return ImageCapacityResponse(**capacity_info)
+    except UnsupportedImageFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to process image: {str(e)}"
+        )
+
+
+@router.post(
+    "/image/embed",
+    response_model=ImageEmbedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Embed Encrypted Envelope into PNG Image",
+    description="Embeds a Phase 2 encrypted envelope into a PNG image using spatial LSB substitution."
+)
+async def embed_envelope_in_image(
+    image: UploadFile = File(..., description="Cover PNG image carrier file"),
+    envelope: str = Form(..., description="Encrypted binary envelope (from /crypto/encrypt)"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Encoding of the supplied envelope")
+) -> ImageEmbedResponse:
+    contents = await image.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Decode envelope string to bytes
+    try:
+        envelope_bytes = bytes_from_base64(envelope) if encoding == "base64" else bytes_from_hex(envelope)
+    except InvalidKeyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid envelope {encoding} encoding: {str(e)}"
+        )
+
+    # 2. Validate that the payload is a valid Phase 2 envelope
+    try:
+        unpack_envelope(envelope_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Embed into carrier image
+    try:
+        stego_array, metrics_dict = embed_in_image(contents, envelope_bytes)
+        _, mode = load_image_as_rgb_array(contents)
+        stego_png_bytes = save_image_to_png_bytes(stego_array, mode=mode)
+    except InsufficientCapacityError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except UnsupportedImageFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Image embedding failed: {str(e)}"
+        )
+
+    # 4. Format stego image as base64 data URL for instant browser preview and download
+    b64_img = base64.b64encode(stego_png_bytes).decode("ascii")
+    data_url = f"data:image/png;base64,{b64_img}"
+
+    quality_metrics = ImageQualityMetricsResponse(
+        mse=metrics_dict["mse"],
+        psnr=metrics_dict["psnr"],
+        psnr_display=metrics_dict["psnr_display"],
+        ssim=metrics_dict["ssim"],
+        embedded_bytes=metrics_dict["embedded_bytes"],
+        framed_bytes=metrics_dict["framed_bytes"],
+        capacity_used_ratio=metrics_dict["capacity_used_ratio"],
+        bits_per_pixel=metrics_dict["bits_per_pixel"],
+    )
+
+    return ImageEmbedResponse(
+        stego_image_data_url=data_url,
+        filename=f"stego_{image.filename or 'carrier.png'}",
+        embedded_bytes=len(envelope_bytes),
+        metrics=quality_metrics,
+        message="Payload successfully embedded into PNG carrier using spatial LSB."
+    )
+
+
+@router.post(
+    "/image/extract",
+    response_model=ImageExtractResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract Encrypted Envelope from Stego PNG Image",
+    description="Extracts the embedded Phase 2 envelope from a stego PNG image and verifies framing integrity."
+)
+async def extract_envelope_from_image(
+    image: UploadFile = File(..., description="Stego PNG image carrier file"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Desired output encoding format")
+) -> ImageExtractResponse:
+    contents = await image.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Extract payload bytes from image
+    try:
+        extracted_bytes = extract_from_image(contents)
+    except CarrierExtractionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extraction failed: {str(e)}"
+        )
+    except UnsupportedImageFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Carrier extraction failed: {str(e)}"
+        )
+
+    # 2. Validate extracted payload as a Phase 2 envelope
+    try:
+        version, _, _, _ = unpack_envelope(extracted_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extracted payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Format envelope
+    encode_func = bytes_to_base64 if encoding == "base64" else bytes_to_hex
+
+    return ImageExtractResponse(
+        envelope=encode_func(extracted_bytes),
+        encoding=encoding,
+        envelope_bytes_length=len(extracted_bytes),
+        envelope_version=version,
+        status="verified",
+        message="Successfully extracted and verified authenticated envelope from PNG carrier."
     )

@@ -1,8 +1,12 @@
-"""Automated tests for health, status, and cryptographic API endpoints."""
+"""Automated tests for health, status, crypto, and image steganography API endpoints."""
 
-import os
+import base64
+import io
+import numpy as np
+from PIL import Image
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.config import settings
 from app.core.crypto_utils import generate_key, bytes_to_base64, bytes_to_hex
@@ -11,6 +15,16 @@ from app.core.crypto_utils import generate_key, bytes_to_base64, bytes_to_hex
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+def make_test_png_bytes(width: int = 80, height: int = 80, mode: str = "RGB") -> bytes:
+    """Helper to generate in-memory PNG bytes for API tests."""
+    channels = 3 if mode == "RGB" else 4
+    arr = np.ones((height, width, channels), dtype=np.uint8) * 120
+    img = Image.fromarray(arr, mode=mode)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def test_root_endpoint(client):
@@ -29,29 +43,28 @@ def test_health_endpoint(client):
     assert data["status"] == "healthy"
     assert data["version"] == settings.VERSION
     assert "timestamp" in data
-    # Ensure no internal filesystem paths or secrets are leaked
     assert "C:" not in str(data)
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_2(client):
+def test_system_status_endpoint_phase_3(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 2
+    assert data["current_phase"] == 3
     assert "modules" in data
     
-    # Phase 1 & 2 modules are implemented
+    # Phase 1, 2, and 3 modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
-    assert len(data["modules"]["cryptography"]["capabilities"]) > 0
     assert data["modules"]["payload_codec"]["status"] == "implemented"
-    assert len(data["modules"]["payload_codec"]["capabilities"]) > 0
+    assert data["modules"]["image_stego"]["status"] == "implemented"
+    assert len(data["modules"]["image_stego"]["capabilities"]) > 0
 
     # Future phases remain truthfully pending
-    assert data["modules"]["image_stego"]["status"] == "pending"
     assert data["modules"]["audio_stego"]["status"] == "pending"
     assert data["modules"]["video_stego"]["status"] == "pending"
+    assert data["modules"]["allocation"]["status"] == "pending"
     assert data["modules"]["steganalysis"]["status"] == "pending"
 
 
@@ -186,7 +199,6 @@ class TestCryptoAPIEndpoints:
         enc_data = enc_res.json()
         key = enc_data["key"]
 
-        # Tamper base64 envelope by flipping characters
         tampered_envelope = enc_data["envelope"][:-4] + "AAAA"
 
         dec_res = client.post(
@@ -204,11 +216,116 @@ class TestCryptoAPIEndpoints:
                 "password": "Password123"
             }
         )
-        assert res.status_code == 422  # Pydantic validation error
+        assert res.status_code == 422
 
     def test_validation_rejects_empty_decrypt_credentials(self, client):
         res = client.post(
             "/api/crypto/decrypt",
             json={"envelope": "dGVzdA=="}
         )
-        assert res.status_code == 422  # Neither key nor password provided
+        assert res.status_code == 422
+
+
+class TestImageStegoAPIEndpoints:
+    def test_image_capacity_endpoint(self, client):
+        png_bytes = make_test_png_bytes(width=100, height=80)
+        res = client.post(
+            "/api/image/capacity",
+            files={"image": ("test_cover.png", png_bytes, "image/png")}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["width"] == 100
+        assert data["height"] == 80
+        assert data["channels"] == 3
+        assert data["total_carrier_bits"] == 100 * 80 * 3
+        assert data["max_usable_payload_bytes"] == (100 * 80 * 3 // 8) - 14
+
+    def test_image_embed_and_extract_end_to_end_pipeline(self, client):
+        original_secret = "End-to-End Image Steganography Verification with AES-256-GCM!"
+
+        # 1. Encrypt message via crypto endpoint
+        enc_res = client.post(
+            "/api/crypto/encrypt",
+            json={"plaintext": original_secret, "encoding": "base64"}
+        )
+        assert enc_res.status_code == 200
+        enc_data = enc_res.json()
+        envelope_b64 = enc_data["envelope"]
+        secret_key_b64 = enc_data["key"]
+
+        # 2. Embed into PNG carrier
+        cover_png = make_test_png_bytes(width=120, height=120)
+        embed_res = client.post(
+            "/api/image/embed",
+            files={"image": ("cover.png", cover_png, "image/png")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 200
+        embed_data = embed_res.json()
+        assert "stego_image_data_url" in embed_data
+        assert embed_data["stego_image_data_url"].startswith("data:image/png;base64,")
+        assert embed_data["metrics"]["psnr"] > 50.0
+        assert embed_data["metrics"]["ssim"] > 0.999
+
+        # 3. Decode stego image data URL back to binary PNG bytes
+        data_url = embed_data["stego_image_data_url"]
+        b64_content = data_url.split(",", 1)[1]
+        stego_png_bytes = base64.b64decode(b64_content)
+
+        # 4. Extract envelope from stego PNG
+        extract_res = client.post(
+            "/api/image/extract",
+            files={"image": ("stego.png", stego_png_bytes, "image/png")},
+            data={"encoding": "base64"}
+        )
+        assert extract_res.status_code == 200
+        extract_data = extract_res.json()
+        extracted_envelope = extract_data["envelope"]
+        assert extracted_envelope == envelope_b64  # Exact match!
+
+        # 5. Decrypt extracted envelope via crypto endpoint
+        dec_res = client.post(
+            "/api/crypto/decrypt",
+            json={
+                "envelope": extracted_envelope,
+                "key": secret_key_b64,
+                "encoding": "base64"
+            }
+        )
+        assert dec_res.status_code == 200
+        dec_data = dec_res.json()
+        assert dec_data["plaintext"] == original_secret
+        assert dec_data["authenticated"] is True
+
+    def test_image_embed_insufficient_capacity_returns_400(self, client):
+        # 10x10 PNG: total carrier is 37 bytes, overhead is 14 bytes -> capacity 23 bytes
+        tiny_png = make_test_png_bytes(width=10, height=10)
+        # Encrypt text that generates an envelope larger than 23 bytes
+        enc_res = client.post("/api/crypto/encrypt", json={"plaintext": "A" * 50})
+        envelope_b64 = enc_res.json()["envelope"]
+
+        embed_res = client.post(
+            "/api/image/embed",
+            files={"image": ("tiny.png", tiny_png, "image/png")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 400
+        assert "exceeds carrier capacity" in embed_res.json()["detail"]
+
+    def test_image_extract_non_stego_image_returns_400(self, client):
+        clean_png = make_test_png_bytes(width=50, height=50)
+        res = client.post(
+            "/api/image/extract",
+            files={"image": ("clean.png", clean_png, "image/png")},
+            data={"encoding": "base64"}
+        )
+        assert res.status_code == 400
+        assert "Extraction failed" in res.json()["detail"]
+
+    def test_image_invalid_file_returns_400(self, client):
+        res = client.post(
+            "/api/image/capacity",
+            files={"image": ("bad.png", b"NOT_A_PNG_FILE_DATA", "image/png")}
+        )
+        assert res.status_code == 400

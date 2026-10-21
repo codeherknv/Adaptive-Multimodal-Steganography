@@ -41,7 +41,8 @@ const PHASES_DATA: PhaseItem[] = [
     title: "Spatial LSB Image Steganography",
     scope: "Implement lossless PNG least-significant-bit embedding/extraction with capacity checks and distortion metrics.",
     acceptanceCriteria: "100% exact bit recovery on clean PNGs; PSNR/MSE distortion calculated; capacity limits enforced.",
-    status: "current",
+    status: "completed",
+    verificationEvidence: "65 automated tests passing; PNG spatial LSB round trips, PSTG 14-byte framing, CRC32 checks, MSE/PSNR/SSIM metrics verified."
   },
   {
     id: 4,

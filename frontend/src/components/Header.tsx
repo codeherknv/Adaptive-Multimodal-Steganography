@@ -1,15 +1,25 @@
 import React from 'react';
-import { RefreshCw, Activity, Terminal } from 'lucide-react';
+import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { HealthResponse } from '../api/types';
 import { StatusBadge } from './StatusBadge';
+
+export type TabType = 'overview' | 'sender' | 'receiver';
 
 interface HeaderProps {
   health: HealthResponse | null;
   loading: boolean;
   onRefresh: () => void;
+  activeTab: TabType;
+  onSelectTab: (tab: TabType) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ health, loading, onRefresh }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+  health, 
+  loading, 
+  onRefresh, 
+  activeTab, 
+  onSelectTab 
+}) => {
   return (
     <header className="border-b border-canvas-border bg-canvas-surface/95 backdrop-blur-sm sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ health, loading, onRefresh }) =>
                 Adaptive Stego Lab
               </span>
               <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / v0.1.0-dev
+                / Phase 3 Live
               </span>
             </div>
           </div>
@@ -54,36 +64,47 @@ export const Header: React.FC<HeaderProps> = ({ health, loading, onRefresh }) =>
         {/* Compact Navigation Tabs */}
         <div className="flex items-center space-x-1 overflow-x-auto py-1.5 -mb-px border-t border-canvas-borderSubtle text-xs font-mono scrollbar-none">
           <button
-            className="px-3 py-1 rounded font-medium text-canvas-textPrimary bg-canvas-elevated border border-canvas-border cursor-default flex items-center space-x-1.5"
+            onClick={() => onSelectTab('overview')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'overview'
+                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+            }`}
           >
             <Activity className="w-3.5 h-3.5 text-accent" />
-            <span>Overview & Architecture</span>
+            <span>Overview & Status</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('sender')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'sender'
+                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+            }`}
+          >
+            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Sender (PNG LSB)</span>
+            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('receiver')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'receiver'
+                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+            }`}
+          >
+            <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Receiver (Extract)</span>
+            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
           </button>
 
           <div className="group relative">
             <button
               disabled
-              className="px-3 py-1 rounded text-canvas-textMuted hover:text-zinc-400 cursor-not-allowed flex items-center space-x-1"
-            >
-              <span>Sender</span>
-              <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">Phase 3</span>
-            </button>
-          </div>
-
-          <div className="group relative">
-            <button
-              disabled
-              className="px-3 py-1 rounded text-canvas-textMuted hover:text-zinc-400 cursor-not-allowed flex items-center space-x-1"
-            >
-              <span>Receiver</span>
-              <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">Phase 3</span>
-            </button>
-          </div>
-
-          <div className="group relative">
-            <button
-              disabled
-              className="px-3 py-1 rounded text-canvas-textMuted hover:text-zinc-400 cursor-not-allowed flex items-center space-x-1"
+              className="px-3 py-1 rounded text-canvas-textMuted/60 hover:text-zinc-500 cursor-not-allowed flex items-center space-x-1"
             >
               <span>Steganalysis</span>
               <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">Phase 8</span>
@@ -93,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({ health, loading, onRefresh }) =>
           <div className="group relative">
             <button
               disabled
-              className="px-3 py-1 rounded text-canvas-textMuted hover:text-zinc-400 cursor-not-allowed flex items-center space-x-1"
+              className="px-3 py-1 rounded text-canvas-textMuted/60 hover:text-zinc-500 cursor-not-allowed flex items-center space-x-1"
             >
               <span>Evaluation Lab</span>
               <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">Phase 9</span>
@@ -103,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({ health, loading, onRefresh }) =>
           <div className="group relative">
             <button
               disabled
-              className="px-3 py-1 rounded text-canvas-textMuted hover:text-zinc-400 cursor-not-allowed flex items-center space-x-1"
+              className="px-3 py-1 rounded text-canvas-textMuted/60 hover:text-zinc-500 cursor-not-allowed flex items-center space-x-1"
             >
               <span>Methodology & Docs</span>
               <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">docs/</span>

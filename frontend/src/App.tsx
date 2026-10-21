@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { checkHealth, getSystemStatus } from './api/client';
 import { HealthResponse, SystemStatusResponse } from './api/types';
-import { Header } from './components/Header';
+import { Header, TabType } from './components/Header';
 import { ProjectIdentity } from './components/ProjectIdentity';
 import { SystemPipeline } from './components/SystemPipeline';
 import { PhaseTimeline } from './components/PhaseTimeline';
 import { ModuleRoadmap } from './components/ModuleRoadmap';
 import { TechnicalHealth } from './components/TechnicalHealth';
+import { Sender } from './pages/Sender';
+import { Receiver } from './pages/Receiver';
 
 export const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -47,38 +50,52 @@ export const App: React.FC = () => {
       <Header 
         health={health} 
         loading={loading} 
-        onRefresh={fetchStatus} 
+        onRefresh={fetchStatus}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
       />
 
       {/* Main Research Workbench Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-7">
-        {/* 1. Research Identity & Hypothesis Objective */}
-        <ProjectIdentity 
-          currentPhase={status?.current_phase || 1} 
-        />
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {activeTab === 'overview' && (
+          <div className="space-y-6 sm:space-y-7">
+            {/* 1. Research Identity & Hypothesis Objective */}
+            <ProjectIdentity 
+              currentPhase={status?.current_phase || 3} 
+            />
 
-        {/* 2. System Pipeline Architecture (Implemented vs. Planned) */}
-        <SystemPipeline />
+            {/* 2. System Pipeline Architecture (Implemented vs. Planned) */}
+            <SystemPipeline />
 
-        {/* 3. Phase Timeline & Technical Verification */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-7">
-            <PhaseTimeline />
-          </div>
-          <div className="lg:col-span-5">
-            <TechnicalHealth 
-              health={health} 
-              error={error} 
-              lastCheck={lastCheck} 
+            {/* 3. Phase Timeline & Technical Verification */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-7">
+                <PhaseTimeline />
+              </div>
+              <div className="lg:col-span-5">
+                <TechnicalHealth 
+                  health={health} 
+                  error={error} 
+                  lastCheck={lastCheck} 
+                />
+              </div>
+            </div>
+
+            {/* 4. Backend Module Lifecycle Roadmap (Live from /api/status) */}
+            <ModuleRoadmap 
+              modules={status?.modules} 
+              loading={loading} 
             />
           </div>
-        </div>
+        )}
 
-        {/* 4. Backend Module Lifecycle Roadmap (Live from /api/status) */}
-        <ModuleRoadmap 
-          modules={status?.modules} 
-          loading={loading} 
-        />
+        {activeTab === 'sender' && (
+          <Sender />
+        )}
+
+        {activeTab === 'receiver' && (
+          <Receiver />
+        )}
       </main>
 
       {/* Minimal Academic Footer */}
@@ -90,7 +107,7 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-3 text-[11px]">
             <span>FastAPI • React 18 • Pytest</span>
             <span>•</span>
-            <span className="text-zinc-500">Phase 1 Foundation Verified</span>
+            <span className="text-emerald-500 font-medium">Phase 3 Image Steganography Verified</span>
           </div>
         </div>
       </footer>

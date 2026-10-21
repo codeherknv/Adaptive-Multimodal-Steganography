@@ -1,7 +1,7 @@
 """Pydantic schemas for API request and response validation."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -161,4 +161,61 @@ class DecryptResponse(BaseModel):
     plaintext_bytes_length: int = Field(
         ...,
         description="Exact byte length of the recovered plaintext."
+    )
+
+
+# ---------------------------------------------------------
+# Image Steganography Schemas (Phase 3)
+# ---------------------------------------------------------
+
+class ImageCapacityResponse(BaseModel):
+    """Capacity estimation metrics for a carrier image."""
+    width: int
+    height: int
+    channels: int
+    color_mode: str
+    embeddable_channels_per_pixel: int
+    total_carrier_bits: int
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+
+
+class ImageQualityMetricsResponse(BaseModel):
+    """Distortion fidelity metrics computed between cover and stego image."""
+    mse: float
+    psnr: Union[float, str]
+    psnr_display: str
+    ssim: float
+    embedded_bytes: int
+    framed_bytes: int
+    capacity_used_ratio: float
+    bits_per_pixel: float
+
+
+class ImageEmbedResponse(BaseModel):
+    """Response containing stego image payload and distortion metrics."""
+    stego_image_data_url: str = Field(
+        ...,
+        description="Base64 data URL (data:image/png;base64,...) for immediate browser display and download."
+    )
+    filename: str = Field("stego_carrier.png", description="Suggested output filename.")
+    embedded_bytes: int
+    metrics: ImageQualityMetricsResponse
+    message: str = Field("Payload successfully embedded with spatial LSB.", description="Status message.")
+
+
+class ImageExtractResponse(BaseModel):
+    """Response containing extracted encrypted envelope."""
+    envelope: str = Field(
+        ...,
+        description="Extracted Phase 2 binary envelope encoded in requested format."
+    )
+    encoding: Literal["base64", "hex"]
+    envelope_bytes_length: int
+    envelope_version: int
+    status: Literal["verified"] = "verified"
+    message: str = Field(
+        "Successfully extracted authenticated envelope from image carrier.",
+        description="Status message."
     )

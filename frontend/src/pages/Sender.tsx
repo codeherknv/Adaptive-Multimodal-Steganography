@@ -3,6 +3,7 @@ import {
   Lock, 
   Upload, 
   Image as ImageIcon, 
+  Music,
   CheckCircle2, 
   AlertTriangle, 
   Download, 
@@ -13,41 +14,55 @@ import {
 } from 'lucide-react';
 import { 
   checkImageCapacity, 
+  checkAudioCapacity,
   encryptMessage, 
-  embedInImage 
+  embedInImage,
+  embedInAudio 
 } from '../api/client';
 import { 
   ImageCapacityResponse, 
   ImageEmbedResponse, 
+  AudioCapacityResponse,
+  AudioEmbedResponse,
   EncryptResponse 
 } from '../api/types';
 
 export const Sender: React.FC = () => {
+  // Carrier mode
+  const [carrierType, setCarrierType] = useState<'image' | 'audio'>('image');
+
   // Input states
   const [plaintext, setPlaintext] = useState<string>('Top Secret Multimodal Research Payload: 33/33/34 allocation baseline.');
   const [keyMode, setKeyMode] = useState<'auto' | 'custom' | 'password'>('auto');
   const [customKey, setCustomKey] = useState<string>('');
   const [password, setPassword] = useState<string>('');
 
-  // Carrier file states
-  const [coverFile, setCoverFile] = useState<File | null>(null);
-  const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [capacity, setCapacity] = useState<ImageCapacityResponse | null>(null);
-  const [capacityLoading, setCapacityLoading] = useState<boolean>(false);
+  // Image carrier file states
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null);
+  const [imageCapacity, setImageCapacity] = useState<ImageCapacityResponse | null>(null);
+  const [imageCapacityLoading, setImageCapacityLoading] = useState<boolean>(false);
+
+  // Audio carrier file states
+  const [coverAudioFile, setCoverAudioFile] = useState<File | null>(null);
+  const [coverAudioPreview, setCoverAudioPreview] = useState<string | null>(null);
+  const [audioCapacity, setAudioCapacity] = useState<AudioCapacityResponse | null>(null);
+  const [audioCapacityLoading, setAudioCapacityLoading] = useState<boolean>(false);
 
   // Execution states
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [encryptResult, setEncryptResult] = useState<EncryptResponse | null>(null);
-  const [embedResult, setEmbedResult] = useState<ImageEmbedResponse | null>(null);
+  const [imageEmbedResult, setImageEmbedResult] = useState<ImageEmbedResponse | null>(null);
+  const [audioEmbedResult, setAudioEmbedResult] = useState<AudioEmbedResponse | null>(null);
 
   // Clipboard copy feedback
   const [copiedKey, setCopiedKey] = useState<boolean>(false);
 
   // Handle Cover PNG selection
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
-    setEmbedResult(null);
+    setImageEmbedResult(null);
     setEncryptResult(null);
 
     const file = e.target.files?.[0];
@@ -58,25 +73,58 @@ export const Sender: React.FC = () => {
       return;
     }
 
-    setCoverFile(file);
+    setCoverImageFile(file);
     const reader = new FileReader();
-    reader.onload = () => setCoverPreview(reader.result as string);
+    reader.onload = () => setCoverImagePreview(reader.result as string);
     reader.readAsDataURL(file);
 
-    // Query backend capacity
-    setCapacityLoading(true);
+    setImageCapacityLoading(true);
     try {
       const capData = await checkImageCapacity(file);
-      setCapacity(capData);
+      setImageCapacity(capData);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(`Failed to inspect carrier image: ${err.message}`);
       } else {
-        setError('Failed to calculate carrier capacity.');
+        setError('Failed to calculate carrier image capacity.');
       }
-      setCapacity(null);
+      setImageCapacity(null);
     } finally {
-      setCapacityLoading(false);
+      setImageCapacityLoading(false);
+    }
+  };
+
+  // Handle Cover WAV selection
+  const handleAudioFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setError(null);
+    setAudioEmbedResult(null);
+    setEncryptResult(null);
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.wav') && !file.type.includes('wav')) {
+      setError('Please select an uncompressed PCM WAV audio file.');
+      return;
+    }
+
+    setCoverAudioFile(file);
+    const audioUrl = URL.createObjectURL(file);
+    setCoverAudioPreview(audioUrl);
+
+    setAudioCapacityLoading(true);
+    try {
+      const capData = await checkAudioCapacity(file);
+      setAudioCapacity(capData);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(`Failed to inspect audio carrier: ${err.message}`);
+      } else {
+        setError('Failed to calculate audio carrier capacity.');
+      }
+      setAudioCapacity(null);
+    } finally {
+      setAudioCapacityLoading(false);
     }
   };
 
@@ -86,8 +134,14 @@ export const Sender: React.FC = () => {
       setError('Please enter a secret message to encrypt.');
       return;
     }
-    if (!coverFile) {
+
+    if (carrierType === 'image' && !coverImageFile) {
       setError('Please select a PNG cover image carrier.');
+      return;
+    }
+
+    if (carrierType === 'audio' && !coverAudioFile) {
+      setError('Please select a PCM WAV cover audio carrier.');
       return;
     }
 
@@ -106,13 +160,24 @@ export const Sender: React.FC = () => {
       const encResponse = await encryptMessage(encReq);
       setEncryptResult(encResponse);
 
-      // Step 2: Embed encrypted envelope into PNG carrier via Phase 3 endpoint
-      const embedResponse = await embedInImage(
-        coverFile,
-        encResponse.envelope,
-        'base64'
-      );
-      setEmbedResult(embedResponse);
+      // Step 2: Embed into chosen carrier
+      if (carrierType === 'image' && coverImageFile) {
+        const embedResponse = await embedInImage(
+          coverImageFile,
+          encResponse.envelope,
+          'base64'
+        );
+        setImageEmbedResult(embedResponse);
+        setAudioEmbedResult(null);
+      } else if (carrierType === 'audio' && coverAudioFile) {
+        const embedResponse = await embedInAudio(
+          coverAudioFile,
+          encResponse.envelope,
+          'base64'
+        );
+        setAudioEmbedResult(embedResponse);
+        setImageEmbedResult(null);
+      }
     } catch (err: any) {
       const msg = err.response?.data?.detail || err.message || 'Operation failed.';
       setError(`Pipeline Error: ${msg}`);
@@ -138,15 +203,43 @@ export const Sender: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-mono text-xs text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                Phase 3 Verified
+                Phase 4 Live
               </span>
               <h1 className="text-base font-bold text-canvas-textPrimary tracking-tight">
-                Sender: Lossless PNG Image Steganography
+                Sender: Multimodal Carrier Steganography
               </h1>
             </div>
             <p className="text-xs text-canvas-textMuted mt-1">
-              Encrypt secret plaintext with authenticated AES-256-GCM and embed the envelope into PNG pixels using spatial LSB.
+              Encrypt secret plaintext with authenticated AES-256-GCM and embed the envelope into lossless PNG pixels or PCM WAV audio samples using LSB substitution.
             </p>
+          </div>
+
+          {/* Carrier Switch */}
+          <div className="flex items-center space-x-1.5 bg-canvas-elevated p-1 rounded border border-canvas-border text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => { setCarrierType('image'); setError(null); }}
+              className={`px-3 py-1 rounded transition-colors flex items-center space-x-1.5 ${
+                carrierType === 'image'
+                  ? 'bg-canvas-base text-canvas-textPrimary border border-canvas-border shadow-sm'
+                  : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+              }`}
+            >
+              <ImageIcon className="w-3.5 h-3.5 text-accent" />
+              <span>PNG Image</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCarrierType('audio'); setError(null); }}
+              className={`px-3 py-1 rounded transition-colors flex items-center space-x-1.5 ${
+                carrierType === 'audio'
+                  ? 'bg-canvas-base text-canvas-textPrimary border border-canvas-border shadow-sm'
+                  : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+              }`}
+            >
+              <Music className="w-3.5 h-3.5 text-emerald-400" />
+              <span>WAV Audio</span>
+            </button>
           </div>
         </div>
 
@@ -256,67 +349,132 @@ export const Sender: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: PNG Carrier & Capacity */}
+        {/* Right Column: Carrier Selection & Capacity */}
         <div className="border border-canvas-border bg-canvas-surface rounded-lg p-5 space-y-4">
           <div className="flex items-center space-x-2 text-xs font-mono text-canvas-textPrimary font-semibold pb-2 border-b border-canvas-border">
-            <ImageIcon className="w-3.5 h-3.5 text-accent" />
-            <span>2. Cover Image Carrier & Capacity</span>
+            {carrierType === 'image' ? (
+              <ImageIcon className="w-3.5 h-3.5 text-accent" />
+            ) : (
+              <Music className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span>2. Cover {carrierType === 'image' ? 'PNG Image' : 'PCM WAV Audio'} Carrier</span>
           </div>
 
-          <div>
-            <label className="block text-xs font-mono text-canvas-textMuted mb-1.5">
-              Select Lossless Cover PNG:
-            </label>
-            <label className="border border-dashed border-canvas-border hover:border-zinc-600 bg-canvas-base rounded-md p-4 flex flex-col items-center justify-center cursor-pointer transition-colors">
-              <Upload className="w-6 h-6 text-canvas-textMuted mb-1" />
-              <span className="text-xs font-mono text-canvas-textSecondary">
-                {coverFile ? coverFile.name : 'Click or drop a PNG image here'}
-              </span>
-              <span className="text-[10px] font-mono text-zinc-500 mt-0.5">
-                PNG format required (Max 25 MB)
-              </span>
-              <input
-                type="file"
-                accept="image/png"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </label>
-          </div>
+          {/* Carrier Upload Area */}
+          {carrierType === 'image' ? (
+            <div>
+              <label className="block text-xs font-mono text-canvas-textMuted mb-1.5">
+                Select Lossless Cover PNG:
+              </label>
+              <label className="border border-dashed border-canvas-border hover:border-zinc-600 bg-canvas-base rounded-md p-4 flex flex-col items-center justify-center cursor-pointer transition-colors">
+                <Upload className="w-6 h-6 text-canvas-textMuted mb-1" />
+                <span className="text-xs font-mono text-canvas-textSecondary">
+                  {coverImageFile ? coverImageFile.name : 'Click or drop a PNG image here'}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-500 mt-0.5">
+                  PNG format required (Max 25 MB)
+                </span>
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={handleImageFileChange}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-mono text-canvas-textMuted mb-1.5">
+                Select Uncompressed PCM WAV Audio:
+              </label>
+              <label className="border border-dashed border-canvas-border hover:border-zinc-600 bg-canvas-base rounded-md p-4 flex flex-col items-center justify-center cursor-pointer transition-colors">
+                <Music className="w-6 h-6 text-canvas-textMuted mb-1" />
+                <span className="text-xs font-mono text-canvas-textSecondary">
+                  {coverAudioFile ? coverAudioFile.name : 'Click or drop a WAV audio file here'}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-500 mt-0.5">
+                  Uncompressed PCM WAV (16-bit or 8-bit, Mono or Stereo)
+                </span>
+                <input
+                  type="file"
+                  accept=".wav,audio/wav,audio/x-wav"
+                  onChange={handleAudioFileChange}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          )}
 
           {/* Carrier Preview & Capacity Info */}
-          {coverPreview && (
+          {carrierType === 'image' && coverImagePreview && (
             <div className="flex items-start space-x-4 p-3 rounded bg-canvas-elevated border border-canvas-border text-xs font-mono">
               <img
-                src={coverPreview}
+                src={coverImagePreview}
                 alt="Cover Preview"
                 className="w-20 h-20 object-contain bg-zinc-950 rounded border border-canvas-border shrink-0"
               />
               <div className="space-y-1 flex-1">
                 <div className="flex justify-between">
                   <span className="text-canvas-textMuted">File Size:</span>
-                  <span className="text-canvas-textPrimary">{coverFile ? (coverFile.size / 1024).toFixed(1) : 0} KB</span>
+                  <span className="text-canvas-textPrimary">{coverImageFile ? (coverImageFile.size / 1024).toFixed(1) : 0} KB</span>
                 </div>
-                {capacity && (
+                {imageCapacity && (
                   <>
                     <div className="flex justify-between">
                       <span className="text-canvas-textMuted">Resolution:</span>
-                      <span className="text-canvas-textPrimary">{capacity.width} × {capacity.height} ({capacity.color_mode})</span>
+                      <span className="text-canvas-textPrimary">{imageCapacity.width} × {imageCapacity.height} ({imageCapacity.color_mode})</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-canvas-textMuted">Max Payload:</span>
-                      <span className="text-emerald-400 font-semibold">{capacity.max_usable_payload_bytes.toLocaleString()} bytes</span>
+                      <span className="text-emerald-400 font-semibold">{imageCapacity.max_usable_payload_bytes.toLocaleString()} bytes</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-canvas-textMuted">Required:</span>
-                      <span className={`${estimatedPayloadBytes > capacity.max_usable_payload_bytes ? 'text-rose-400 font-bold' : 'text-canvas-textPrimary'}`}>
+                      <span className={`${estimatedPayloadBytes > imageCapacity.max_usable_payload_bytes ? 'text-rose-400 font-bold' : 'text-canvas-textPrimary'}`}>
                         {estimatedPayloadBytes} bytes
                       </span>
                     </div>
                   </>
                 )}
-                {capacityLoading && (
+                {imageCapacityLoading && (
                   <span className="text-zinc-500 italic">Calculating carrier capacity...</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {carrierType === 'audio' && coverAudioFile && (
+            <div className="p-3 rounded bg-canvas-elevated border border-canvas-border text-xs font-mono space-y-2">
+              {coverAudioPreview && (
+                <audio controls src={coverAudioPreview} className="w-full h-8" />
+              )}
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-canvas-textMuted">File Size:</span>
+                  <span className="text-canvas-textPrimary">{(coverAudioFile.size / 1024).toFixed(1)} KB</span>
+                </div>
+                {audioCapacity && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-canvas-textMuted">Layout:</span>
+                      <span className="text-canvas-textPrimary">{audioCapacity.channel_layout} • {audioCapacity.sample_rate / 1000} kHz • {audioCapacity.bits_per_sample}-bit</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-canvas-textMuted">Duration:</span>
+                      <span className="text-canvas-textPrimary">{audioCapacity.duration_seconds.toFixed(2)}s ({audioCapacity.total_samples.toLocaleString()} samples)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-canvas-textMuted">Max Payload:</span>
+                      <span className="text-emerald-400 font-semibold">{audioCapacity.max_usable_payload_bytes.toLocaleString()} bytes</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-canvas-textMuted">Framing Overhead:</span>
+                      <span className="text-zinc-500">14 bytes (WSTG header)</span>
+                    </div>
+                  </>
+                )}
+                {audioCapacityLoading && (
+                  <span className="text-zinc-500 italic">Calculating audio capacity...</span>
                 )}
               </div>
             </div>
@@ -325,14 +483,14 @@ export const Sender: React.FC = () => {
           {/* Action Button */}
           <button
             onClick={handleEncryptAndEmbed}
-            disabled={processing || !coverFile || !plaintext.trim()}
+            disabled={processing || (carrierType === 'image' ? !coverImageFile : !coverAudioFile) || !plaintext.trim()}
             className="w-full py-2.5 px-4 rounded bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-mono text-xs font-semibold flex items-center justify-center space-x-2 transition-colors cursor-pointer disabled:cursor-not-allowed"
           >
             {processing ? (
               <span>Encrypting & Embedding LSB...</span>
             ) : (
               <>
-                <span>Encrypt & Embed into PNG</span>
+                <span>Encrypt & Embed into {carrierType === 'image' ? 'PNG' : 'WAV'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </>
             )}
@@ -340,16 +498,16 @@ export const Sender: React.FC = () => {
         </div>
       </div>
 
-      {/* Results & Stego Download Section */}
-      {embedResult && (
+      {/* Results & Stego Download Section (Image Result) */}
+      {imageEmbedResult && carrierType === 'image' && (
         <div className="border border-emerald-900/60 bg-emerald-950/10 rounded-lg p-5 sm:p-6 space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-emerald-900/40">
             <div className="flex items-center space-x-2 text-emerald-400 font-mono text-sm font-semibold">
               <CheckCircle2 className="w-4 h-4" />
-              <span>Steganographic Embedding Succeeded</span>
+              <span>Image Steganographic Embedding Succeeded</span>
             </div>
             <span className="text-xs font-mono text-zinc-400">
-              Payload: {embedResult.embedded_bytes} bytes concealed
+              Payload: {imageEmbedResult.embedded_bytes} bytes concealed
             </span>
           </div>
 
@@ -361,14 +519,14 @@ export const Sender: React.FC = () => {
               </span>
               <div className="border border-canvas-border bg-canvas-base rounded p-2 flex items-center justify-center">
                 <img
-                  src={embedResult.stego_image_data_url}
+                  src={imageEmbedResult.stego_image_data_url}
                   alt="Stego Output"
                   className="max-h-48 object-contain rounded"
                 />
               </div>
               <a
-                href={embedResult.stego_image_data_url}
-                download={embedResult.filename}
+                href={imageEmbedResult.stego_image_data_url}
+                download={imageEmbedResult.filename}
                 className="w-full py-2 px-3 rounded bg-canvas-elevated hover:bg-zinc-800 border border-canvas-border text-canvas-textPrimary font-mono text-xs flex items-center justify-center space-x-2 transition-colors"
               >
                 <Download className="w-3.5 h-3.5 text-accent" />
@@ -386,24 +544,24 @@ export const Sender: React.FC = () => {
                 <div className="flex justify-between items-baseline">
                   <span className="text-canvas-textMuted">PSNR:</span>
                   <span className="text-emerald-400 font-bold text-sm">
-                    {embedResult.metrics.psnr_display}
+                    {imageEmbedResult.metrics.psnr_display}
                   </span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-canvas-textMuted">Mean Squared Error (MSE):</span>
-                  <span className="text-canvas-textPrimary">{embedResult.metrics.mse}</span>
+                  <span className="text-canvas-textPrimary">{imageEmbedResult.metrics.mse}</span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-canvas-textMuted">Structural Similarity (SSIM):</span>
-                  <span className="text-canvas-textPrimary">{embedResult.metrics.ssim}</span>
+                  <span className="text-canvas-textPrimary">{imageEmbedResult.metrics.ssim}</span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-canvas-textMuted">Bits Per Pixel (bpp):</span>
-                  <span className="text-canvas-textPrimary">{embedResult.metrics.bits_per_pixel}</span>
+                  <span className="text-canvas-textPrimary">{imageEmbedResult.metrics.bits_per_pixel}</span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-canvas-textMuted">Carrier Capacity Used:</span>
-                  <span className="text-canvas-textPrimary">{(embedResult.metrics.capacity_used_ratio * 100).toFixed(2)}%</span>
+                  <span className="text-canvas-textPrimary">{(imageEmbedResult.metrics.capacity_used_ratio * 100).toFixed(2)}%</span>
                 </div>
               </div>
 
@@ -443,7 +601,110 @@ export const Sender: React.FC = () => {
               <div className="p-2.5 rounded bg-amber-950/20 border border-amber-900/40 text-amber-300/90 text-[10px] flex items-start space-x-1.5">
                 <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
                 <span>
-                  <strong>Academic Key Hygiene:</strong> This key is <em>never</em> embedded inside the image. You must provide it to the Receiver to authenticate and decrypt the recovered message.
+                  <strong>Academic Key Hygiene:</strong> This key is <em>never</em> embedded inside the carrier. You must provide it to the Receiver to authenticate and decrypt the recovered message.
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Results & Stego Download Section (Audio Result) */}
+      {audioEmbedResult && carrierType === 'audio' && (
+        <div className="border border-emerald-900/60 bg-emerald-950/10 rounded-lg p-5 sm:p-6 space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-emerald-900/40">
+            <div className="flex items-center space-x-2 text-emerald-400 font-mono text-sm font-semibold">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Audio Steganographic Embedding Succeeded</span>
+            </div>
+            <span className="text-xs font-mono text-zinc-400">
+              Payload: {audioEmbedResult.embedded_bytes} bytes concealed
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Stego Audio Player & Download */}
+            <div className="space-y-3">
+              <span className="block text-xs font-mono text-canvas-textMuted uppercase tracking-wider">
+                Generated Stego WAV Carrier:
+              </span>
+              <div className="border border-canvas-border bg-canvas-base rounded p-3 flex flex-col justify-center space-y-2">
+                <audio controls src={audioEmbedResult.stego_audio_data_url} className="w-full h-8" />
+              </div>
+              <a
+                href={audioEmbedResult.stego_audio_data_url}
+                download={audioEmbedResult.filename}
+                className="w-full py-2 px-3 rounded bg-canvas-elevated hover:bg-zinc-800 border border-canvas-border text-canvas-textPrimary font-mono text-xs flex items-center justify-center space-x-2 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Download Stego WAV</span>
+              </a>
+            </div>
+
+            {/* Audio Quality Metrics */}
+            <div className="border border-canvas-border bg-canvas-elevated rounded-md p-4 space-y-3 text-xs font-mono">
+              <span className="block text-canvas-textMuted uppercase tracking-wider text-[11px] pb-1 border-b border-canvas-border">
+                Audio Fidelity Metrics
+              </span>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-canvas-textMuted">Signal-to-Noise Ratio (SNR):</span>
+                  <span className="text-emerald-400 font-bold text-sm">
+                    {audioEmbedResult.metrics.snr_display}
+                  </span>
+                </div>
+                <div className="flex justify-between items-baseline">
+                  <span className="text-canvas-textMuted">Normalized MSE:</span>
+                  <span className="text-canvas-textPrimary">{audioEmbedResult.metrics.mse}</span>
+                </div>
+                <div className="flex justify-between items-baseline">
+                  <span className="text-canvas-textMuted">Carrier Capacity Used:</span>
+                  <span className="text-canvas-textPrimary">{(audioEmbedResult.metrics.capacity_used_ratio * 100).toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between items-baseline">
+                  <span className="text-canvas-textMuted">Bits Per Sample Used:</span>
+                  <span className="text-canvas-textPrimary">{audioEmbedResult.metrics.bits_per_sample_used}</span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-zinc-500 pt-1 leading-relaxed">
+                <span className="text-zinc-400 font-medium">Research Note:</span> Audio SNR and MSE quantify physical sample fidelity between cover and stego signals; they do not prove resistance against statistical or machine-learning audio steganalysis.
+              </p>
+            </div>
+
+            {/* Key Management Box */}
+            <div className="border border-canvas-border bg-canvas-elevated rounded-md p-4 space-y-3 text-xs font-mono">
+              <div className="flex items-center justify-between pb-1 border-b border-canvas-border">
+                <span className="text-canvas-textMuted uppercase tracking-wider text-[11px]">
+                  Decryption Key (Copy Now)
+                </span>
+                <button
+                  onClick={copyKeyToClipboard}
+                  className="hover:text-canvas-textPrimary p-1"
+                  title="Copy Key"
+                >
+                  {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <div className="bg-canvas-base p-2.5 rounded border border-canvas-border break-all select-all text-accent text-[11px]">
+                {encryptResult?.key}
+              </div>
+
+              {encryptResult?.salt && (
+                <div>
+                  <span className="text-[10px] text-zinc-400 block mb-0.5">PBKDF2 Salt:</span>
+                  <div className="bg-canvas-base p-1.5 rounded border border-canvas-border break-all select-all text-[10px] text-zinc-300">
+                    {encryptResult.salt}
+                  </div>
+                </div>
+              )}
+
+              <div className="p-2.5 rounded bg-amber-950/20 border border-amber-900/40 text-amber-300/90 text-[10px] flex items-start space-x-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                <span>
+                  <strong>Academic Key Hygiene:</strong> This key is <em>never</em> embedded inside the carrier. You must provide it to the Receiver to authenticate and decrypt the recovered message.
                 </span>
               </div>
             </div>

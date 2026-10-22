@@ -274,9 +274,131 @@ To quantify image alteration after steganographic embedding, the evaluation engi
 
 ---
 
-## 7. Test Execution & Verification
+## 7. PCM WAV Audio Steganography Architecture
 
-To execute the complete automated test suite (including health, status, crypto, codec, image stego, and quality metrics):
+The audio steganography engine (`backend/app/media/audio_stego.py`) implements least-significant-bit (LSB) substitution for uncompressed Linear PCM WAV audio files.
+
+### 1. Carrier Audio Format & Sample Representation
+- **Supported Formats**: Uncompressed RIFF/WAVE containers with standard PCM formatting (`WAVE_FORMAT_PCM = 0x0001`).
+- **Sample Bit Depths**:
+  - **16-bit Signed PCM (`int16`)**: Samples in range $[-32768, 32767]$. LSB substitution modifies the least significant bit:
+    $$\text{stego\_sample} = (\text{sample} \ \& \ \sim 1) \ | \ \text{bit}$$
+    In two's complement integer representation, clearing the least significant bit with bitwise-AND using `~1` (`-2` or `0xFFFE`) works symmetrically across positive and negative values without integer overflow.
+  - **8-bit Unsigned PCM (`uint8`)**: Samples in range $[0, 255]$ with midpoint at $128$. LSB substitution:
+    $$\text{stego\_sample} = (\text{sample} \ \& \ \text{0xFE}) \ | \ \text{bit}$$
+- **Multi-Channel Interleaving**:
+  For multi-channel audio (e.g. stereo, 2 channels), WAV audio frames are stored interleaved:
+  $$[L_0, R_0, L_1, R_1, L_2, R_2, \dots, L_{N-1}, R_{N-1}]$$
+  The engine flattens the interleaved sample array deterministically into a 1D sequence of samples, embedding sequentially across time and channels. This maximizes capacity while preserving identical frame counts, sample rates, channel configurations, and playback duration.
+
+### 2. Audio Binary Framing Header (`WSTG`)
+To strictly separate audio steganographic carriers from image carriers, audio payloads use a distinct 14-byte binary framing header:
+
+```
++--------------------+----------------+-----------------+----------------------------------------+
+| Field              | Size / Type    | Byte Offset     | Description                            |
++--------------------+----------------+-----------------+----------------------------------------+
+| Magic Signature    | 4 bytes        | 0 - 3           | Fixed ASCII b"WSTG" (WAV Stego)        |
+| Format Version     | 1 byte uint8   | 4               | 0x01                                   |
+| Reserved           | 1 byte uint8   | 5               | 0x00                                   |
+| Payload Length (L) | 4 bytes uint32 | 6 - 9           | Exact byte length of embedded envelope |
+| Payload CRC32      | 4 bytes uint32 | 10 - 13         | IEEE 802.3 CRC32 of embedded payload   |
++--------------------+----------------+-----------------+----------------------------------------+
+| Embedded Payload   | L bytes        | 14 - (14+L-1)   | AES-256-GCM encrypted envelope bytes  |
++--------------------+----------------+-----------------+----------------------------------------+
+```
+
+Total framing overhead is 14 bytes (112 bits). Extraction reads exactly 112 bits, validates `b"WSTG"`, checks the declared length against the total sample count, extracts $L \times 8$ payload bits, and verifies the CRC32 checksum before passing the bytes to the cryptographic layer.
+
+---
+
+## 8. Audio Quality Distortion Metrics
+
+To quantify acoustic alteration after steganographic embedding, the evaluation engine (`backend/app/evaluation/quality_metrics.py`) implements:
+
+1. **Normalized Mean Squared Error (MSE)**:
+   PCM samples are normalized to the standard floating-point audio range $[-1.0, 1.0]$:
+   - For 16-bit audio: $x_i = \text{sample}_i / 32768.0$
+   - For 8-bit audio: $x_i = (\text{sample}_i - 128.0) / 128.0$
+   $$\text{MSE} = \frac{1}{N} \sum_{i=0}^{N-1} (x_i - y_i)^2$$
+   where $x_i$ is the cover sample and $y_i$ is the stego sample. $\text{MSE} = 0.0$ indicates identical audio.
+
+2. **Signal-to-Noise Ratio (SNR)**:
+   $$\text{SNR} = 10 \cdot \log_{10}\left(\frac{P_{\text{signal}}}{P_{\text{noise}}}\right) = 10 \cdot \log_{10}\left(\frac{\sum_{i=0}^{N-1} x_i^2}{\sum_{i=0}^{N-1} (x_i - y_i)^2}\right)$$
+   - Expressed in decibels (dB). Higher values denote less audible degradation.
+   - For identical audio ($P_{\text{noise}} = 0$), the implementation returns `math.inf` (rendered as `"Infinity"` in JSON and UI).
+   - In 16-bit PCM 1-bit LSB steganography, SNR typically exceeds $80\text{ dB}$, representing near-perfect numerical fidelity.
+   - **Critical Research Note**: Audio SNR quantifies physical sample-level deviation. It does **not** guarantee absolute inaudibility (which is governed by psychoacoustic frequency masking thresholds) and does **not** prove resistance against audio steganalysis (e.g. sample pair analysis, derivative histogram analysis), which detects artificial LSB smoothing.
+
+---
+
+## 9. Audio Steganography API Endpoints
+
+### 1. `POST /api/audio/capacity`
+- **Request**: Multipart form data with `audio` (PCM WAV file).
+- **Response**:
+  ```json
+  {
+    "num_channels": 2,
+    "channel_layout": "stereo",
+    "sample_rate": 44100,
+    "sample_width": 2,
+    "bits_per_sample": 16,
+    "num_frames": 44100,
+    "duration_seconds": 1.0,
+    "total_samples": 88200,
+    "total_carrier_bits": 88200,
+    "total_carrier_bytes": 11025,
+    "header_overhead_bytes": 14,
+    "max_usable_payload_bytes": 11011
+  }
+  ```
+
+### 2. `POST /api/audio/embed`
+- **Request**: Multipart form data:
+  - `audio`: Cover PCM WAV carrier file.
+  - `envelope`: Encrypted envelope string.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "stego_audio_data_url": "data:audio/wav;base64,UklGR...",
+    "filename": "stego_carrier.wav",
+    "embedded_bytes": 110,
+    "metrics": {
+      "mse": 0.00000000,
+      "snr": 103.51,
+      "snr_display": "103.51 dB",
+      "embedded_bytes": 110,
+      "framed_bytes": 124,
+      "capacity_used_ratio": 0.0112,
+      "bits_per_sample_used": 0.0112
+    },
+    "message": "Payload successfully embedded into WAV audio using sample LSB."
+  }
+  ```
+
+### 3. `POST /api/audio/extract`
+- **Request**: Multipart form data:
+  - `audio`: Stego PCM WAV carrier file.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "envelope": "<EXTRACTED_ENVELOPE_STRING>",
+    "encoding": "base64",
+    "envelope_bytes_length": 110,
+    "envelope_version": 1,
+    "status": "verified",
+    "message": "Successfully extracted and verified authenticated envelope from WAV carrier."
+  }
+  ```
+
+---
+
+## 10. Test Execution & Verification
+
+To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, and quality metrics):
 
 ```powershell
 cd backend
@@ -284,4 +406,4 @@ cd backend
 pytest -v
 ```
 
-All **65 unit and integration tests** pass with zero errors.
+All **90 unit and integration tests** pass with zero errors.

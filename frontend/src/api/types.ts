@@ -102,3 +102,49 @@ export interface ImageExtractResponse {
   status: 'verified';
   message: string;
 }
+
+// ---------------------------------------------------------
+// Audio Steganography Types (Phase 4)
+// ---------------------------------------------------------
+
+export interface AudioCapacityResponse {
+  num_channels: number;
+  channel_layout: string;
+  sample_rate: number;
+  sample_width: number;
+  bits_per_sample: number;
+  num_frames: number;
+  duration_seconds: number;
+  total_samples: number;
+  total_carrier_bits: number;
+  total_carrier_bytes: number;
+  header_overhead_bytes: number;
+  max_usable_payload_bytes: number;
+}
+
+export interface AudioQualityMetrics {
+  mse: number;
+  snr: number | string;
+  snr_display: string;
+  embedded_bytes: number;
+  framed_bytes: number;
+  capacity_used_ratio: number;
+  bits_per_sample_used: number;
+}
+
+export interface AudioEmbedResponse {
+  stego_audio_data_url: string;
+  filename: string;
+  embedded_bytes: number;
+  metrics: AudioQualityMetrics;
+  message: string;
+}
+
+export interface AudioExtractResponse {
+  envelope: string;
+  encoding: 'base64' | 'hex';
+  envelope_bytes_length: number;
+  envelope_version: number;
+  status: 'verified';
+  message: string;
+}

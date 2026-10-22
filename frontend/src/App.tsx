@@ -61,7 +61,7 @@ export const App: React.FC = () => {
           <div className="space-y-6 sm:space-y-7">
             {/* 1. Research Identity & Hypothesis Objective */}
             <ProjectIdentity 
-              currentPhase={status?.current_phase || 3} 
+              currentPhase={status?.current_phase || 4} 
             />
 
             {/* 2. System Pipeline Architecture (Implemented vs. Planned) */}
@@ -107,7 +107,7 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-3 text-[11px]">
             <span>FastAPI • React 18 • Pytest</span>
             <span>•</span>
-            <span className="text-emerald-500 font-medium">Phase 3 Image Steganography Verified</span>
+            <span className="text-emerald-500 font-medium">Phase 4 Audio & Image Steganography Verified</span>
           </div>
         </div>
       </footer>

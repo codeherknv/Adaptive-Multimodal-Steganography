@@ -219,3 +219,65 @@ class ImageExtractResponse(BaseModel):
         "Successfully extracted authenticated envelope from image carrier.",
         description="Status message."
     )
+
+
+# ---------------------------------------------------------
+# Audio Steganography Schemas (Phase 4)
+# ---------------------------------------------------------
+
+class AudioCapacityResponse(BaseModel):
+    """Capacity estimation metrics for a WAV audio carrier."""
+    num_channels: int
+    channel_layout: str
+    sample_rate: int
+    sample_width: int
+    bits_per_sample: int
+    num_frames: int
+    duration_seconds: float
+    total_samples: int
+    total_carrier_bits: int
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+
+
+class AudioQualityMetricsResponse(BaseModel):
+    """Distortion fidelity metrics computed between cover and stego audio."""
+    mse: float
+    snr: Union[float, str]
+    snr_display: str
+    embedded_bytes: int
+    framed_bytes: int
+    capacity_used_ratio: float
+    bits_per_sample_used: float
+
+
+class AudioEmbedResponse(BaseModel):
+    """Response containing stego audio data URL and distortion metrics."""
+    stego_audio_data_url: str = Field(
+        ...,
+        description="Base64 data URL (data:audio/wav;base64,...) for immediate browser playback and download."
+    )
+    filename: str = Field("stego_carrier.wav", description="Suggested output filename.")
+    embedded_bytes: int
+    metrics: AudioQualityMetricsResponse
+    message: str = Field(
+        "Payload successfully embedded into WAV audio using sample LSB.",
+        description="Status message."
+    )
+
+
+class AudioExtractResponse(BaseModel):
+    """Response containing extracted encrypted envelope from audio carrier."""
+    envelope: str = Field(
+        ...,
+        description="Extracted Phase 2 binary envelope encoded in requested format."
+    )
+    encoding: Literal["base64", "hex"]
+    envelope_bytes_length: int
+    envelope_version: int
+    status: Literal["verified"] = "verified"
+    message: str = Field(
+        "Successfully extracted authenticated envelope from audio carrier.",
+        description="Status message."
+    )

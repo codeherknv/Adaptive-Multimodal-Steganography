@@ -114,3 +114,45 @@ A fundamental principle in steganography research is the distinction between **c
 - **Steganalysis Resistance**: Statistical and machine-learning steganalysis tools (e.g., sample pair analysis, Chi-square attacks, SPAM features) do not inspect images visually. Instead, they exploit statistical anomalies caused by LSB flipping (such as imbalances in Pairs of Values / PoVs or pixel co-occurrence matrices).
 - **Core Principle**: High PSNR (> 40 dB) is a prerequisite for unobtrusive transmission, but it does **not** guarantee invisibility or prove resistance against steganalysis. Evaluating true detectability requires empirical steganalysis experiments (planned for Phase 8).
 
+---
+
+## 7. PCM Audio Steganography & Distortion Metrics
+
+### 1. Linear PCM Audio Carrier Representation
+In uncompressed Pulse Code Modulation (PCM) audio, sound waveforms are sampled at discrete intervals (e.g. 44,100 Hz or 48,000 Hz) and quantized:
+- **16-bit Signed Integer (`int16`)**:
+  Each sample is represented in two's complement integer notation in $[-32768, 32767]$. Modifying the least significant bit alters the sample by at most $\pm 1$ unit out of $65536$ total quantization steps, corresponding to an amplitude deviation of approximately $-96\text{ dBFS}$.
+- **8-bit Unsigned Integer (`uint8`)**:
+  Each sample is an unsigned byte in $[0, 255]$ with silence at $128$. LSB modification alters the sample by $\pm 1$ unit out of $256$, corresponding to an amplitude deviation of approximately $-48\text{ dBFS}$.
+- **Multi-Channel Interleaving**:
+  Stereo WAV files interleave left and right channels ($L_0, R_0, L_1, R_1, \dots$). The engine flattens this interleaved sequence deterministically, ensuring that both stereo channels receive payload bits uniformly across the duration of the recording.
+
+### 2. Audio Binary Framing Header (`WSTG`)
+Similar to the image carrier, audio payloads use a length-prefixed 14-byte binary framing header (`b"WSTG"`), encoding:
+- `b"WSTG"` (4 bytes magic signature)
+- Version 1 (1 byte)
+- Reserved (1 byte)
+- Payload length $L$ (4 bytes uint32)
+- IEEE 802.3 CRC32 checksum (4 bytes uint32)
+
+This header is completely separated from the image `b"PSTG"` header to prevent cross-carrier signature collisions.
+
+### 3. Audio Quality Metrics & Derivations
+To objectively evaluate audio distortion, two complementary metrics are implemented:
+1. **Normalized Mean Squared Error (MSE)**:
+   Normalizing samples to $[-1.0, 1.0]$ prevents metric scale distortion between 8-bit and 16-bit files:
+   $$\text{MSE} = \frac{1}{N} \sum_{i=0}^{N-1} (x_i - y_i)^2$$
+2. **Signal-to-Noise Ratio (SNR)**:
+   Measures the ratio of original cover audio signal energy to the steganographic embedding noise energy:
+   $$\text{SNR}_{\text{dB}} = 10 \cdot \log_{10}\left(\frac{\sum_{i=0}^{N-1} x_i^2}{\sum_{i=0}^{N-1} (x_i - y_i)^2}\right)$$
+   - When cover and stego audio are identical, error energy is zero; the engine reports $\text{SNR} = \infty$.
+   - In 16-bit audio with low payload ratio, SNR typically exceeds $80\text{ dB}$.
+
+### 4. Audio Fidelity vs. Steganalytic Detectability
+A critical finding for students and researchers:
+- **SNR vs. Inaudibility**: SNR is a purely mathematical ratio of broadband energy. It does not account for the **psychoacoustic human auditory system (HAS)**, which exhibits non-linear frequency sensitivity (Fletcher-Munson equal-loudness contours) and simultaneous/temporal masking thresholds. A distortion that is numerically negligible in high-energy loud passages may be distinctly audible during silent pauses.
+- **Audio Steganalysis Attacks**: Classical audio LSB steganography introduces statistical regularities in the audio waveform:
+  - **Sample Pair Analysis (SPA)** and **Histogram Attacks**: LSB substitution pairs adjacent even/odd sample values (PoVs), flattening the second-order difference histogram.
+  - **Phase & Derivative Discontinuities**: High-frequency spectral analysis can detect artificial high-frequency noise introduced by random LSB replacement.
+- **Core Principle**: An SNR exceeding $60\text{ dB}$ confirms high acoustic fidelity, but does **not** prove security against statistical audio steganalysis. Machine-learning audio steganalysis classifiers will be implemented in Phase 8 to empirically quantify detection boundaries.
+

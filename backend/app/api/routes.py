@@ -32,6 +32,15 @@ from app.media.image_stego import (
     CarrierExtractionError,
     UnsupportedImageFormatError,
 )
+from app.media.audio_stego import (
+    get_audio_capacity,
+    embed_in_audio,
+    extract_from_audio,
+    AudioStegoError,
+    InsufficientCapacityError as AudioCapacityError,
+    CarrierExtractionError as AudioExtractionError,
+    UnsupportedAudioFormatError,
+)
 from app.schemas import (
     HealthResponse,
     SystemStatusResponse,
@@ -44,6 +53,10 @@ from app.schemas import (
     ImageQualityMetricsResponse,
     ImageEmbedResponse,
     ImageExtractResponse,
+    AudioCapacityResponse,
+    AudioQualityMetricsResponse,
+    AudioEmbedResponse,
+    AudioExtractResponse,
 )
 
 router = APIRouter()
@@ -123,10 +136,18 @@ async def get_system_status() -> SystemStatusResponse:
         ),
         "audio_stego": ModuleStatus(
             name="PCM WAV Audio Steganography",
-            phase=5,
-            status="pending",
-            description="16-bit PCM WAV LSB embedding and extraction preserving audio headers.",
-            capabilities=[]
+            phase=4,
+            status="implemented",
+            description="16-bit & 8-bit PCM WAV LSB embedding and extraction with WSTG framing and header preservation.",
+            capabilities=[
+                "Uncompressed PCM WAV Sample LSB",
+                "14-Byte Binary WSTG Framing",
+                "Mono & Stereo Interleaved Sample Handling",
+                "Audio Header & Duration Preservation",
+                "CRC32 Pre-Check Integrity",
+                "Audio Capacity Estimation",
+                "Normalized MSE & SNR Distortion Metrics"
+            ]
         ),
         "video_stego": ModuleStatus(
             name="Frame-Based Video Steganography",
@@ -161,7 +182,7 @@ async def get_system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=3,
+        current_phase=4,
         modules=modules
     )
 
@@ -464,4 +485,170 @@ async def extract_envelope_from_image(
         envelope_version=version,
         status="verified",
         message="Successfully extracted and verified authenticated envelope from PNG carrier."
+    )
+
+
+# ---------------------------------------------------------
+# Audio Steganography Endpoints (Phase 4)
+# ---------------------------------------------------------
+
+@router.post(
+    "/audio/capacity",
+    response_model=AudioCapacityResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Estimate Audio Carrier Payload Capacity",
+    description="Inspects an uploaded PCM WAV audio file and calculates its maximum usable LSB payload capacity."
+)
+async def check_audio_capacity(
+    audio: UploadFile = File(..., description="PCM WAV audio carrier file")
+) -> AudioCapacityResponse:
+    contents = await audio.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    try:
+        capacity_info = get_audio_capacity(contents)
+        return AudioCapacityResponse(**capacity_info)
+    except UnsupportedAudioFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to process audio: {str(e)}"
+        )
+
+
+@router.post(
+    "/audio/embed",
+    response_model=AudioEmbedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Embed Encrypted Envelope into PCM WAV Audio",
+    description="Embeds a Phase 2 encrypted envelope into an uncompressed PCM WAV audio file using sample LSB substitution."
+)
+async def embed_envelope_in_audio(
+    audio: UploadFile = File(..., description="Cover PCM WAV audio carrier file"),
+    envelope: str = Form(..., description="Encrypted binary envelope (from /crypto/encrypt)"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Encoding of the supplied envelope")
+) -> AudioEmbedResponse:
+    contents = await audio.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Decode envelope string to bytes
+    try:
+        envelope_bytes = bytes_from_base64(envelope) if encoding == "base64" else bytes_from_hex(envelope)
+    except InvalidKeyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid envelope {encoding} encoding: {str(e)}"
+        )
+
+    # 2. Validate that the payload is a valid Phase 2 envelope
+    try:
+        unpack_envelope(envelope_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Embed into carrier audio
+    try:
+        stego_wav_bytes, metrics_dict = embed_in_audio(contents, envelope_bytes)
+    except AudioCapacityError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except UnsupportedAudioFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Audio embedding failed: {str(e)}"
+        )
+
+    # 4. Format stego audio as base64 data URL for playback and download
+    b64_audio = base64.b64encode(stego_wav_bytes).decode("ascii")
+    data_url = f"data:audio/wav;base64,{b64_audio}"
+
+    quality_metrics = AudioQualityMetricsResponse(
+        mse=metrics_dict["mse"],
+        snr=metrics_dict["snr"],
+        snr_display=metrics_dict["snr_display"],
+        embedded_bytes=metrics_dict["embedded_bytes"],
+        framed_bytes=metrics_dict["framed_bytes"],
+        capacity_used_ratio=metrics_dict["capacity_used_ratio"],
+        bits_per_sample_used=metrics_dict["bits_per_sample_used"],
+    )
+
+    filename_stem = audio.filename or "carrier.wav"
+    if not filename_stem.lower().endswith(".wav"):
+        filename_stem += ".wav"
+
+    return AudioEmbedResponse(
+        stego_audio_data_url=data_url,
+        filename=f"stego_{filename_stem}",
+        embedded_bytes=len(envelope_bytes),
+        metrics=quality_metrics,
+        message="Payload successfully embedded into WAV audio carrier using sample LSB."
+    )
+
+
+@router.post(
+    "/audio/extract",
+    response_model=AudioExtractResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract Encrypted Envelope from Stego WAV Audio",
+    description="Extracts the embedded Phase 2 envelope from a stego WAV audio file and verifies framing integrity."
+)
+async def extract_envelope_from_audio(
+    audio: UploadFile = File(..., description="Stego PCM WAV audio carrier file"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Desired output encoding format")
+) -> AudioExtractResponse:
+    contents = await audio.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Extract payload bytes from audio
+    try:
+        extracted_bytes = extract_from_audio(contents)
+    except AudioExtractionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extraction failed: {str(e)}"
+        )
+    except UnsupportedAudioFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Carrier extraction failed: {str(e)}"
+        )
+
+    # 2. Validate extracted payload as a Phase 2 envelope
+    try:
+        version, _, _, _ = unpack_envelope(extracted_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extracted payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Format envelope
+    encode_func = bytes_to_base64 if encoding == "base64" else bytes_to_hex
+
+    return AudioExtractResponse(
+        envelope=encode_func(extracted_bytes),
+        encoding=encoding,
+        envelope_bytes_length=len(extracted_bytes),
+        envelope_version=version,
+        status="verified",
+        message="Successfully extracted and verified authenticated envelope from WAV carrier."
     )

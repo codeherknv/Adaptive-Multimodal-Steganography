@@ -47,22 +47,23 @@ def test_health_endpoint(client):
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_3(client):
+def test_system_status_endpoint_phase_4(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 3
+    assert data["current_phase"] == 4
     assert "modules" in data
     
-    # Phase 1, 2, and 3 modules are implemented
+    # Phase 1, 2, 3, and 4 modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
     assert data["modules"]["payload_codec"]["status"] == "implemented"
     assert data["modules"]["image_stego"]["status"] == "implemented"
     assert len(data["modules"]["image_stego"]["capabilities"]) > 0
+    assert data["modules"]["audio_stego"]["status"] == "implemented"
+    assert len(data["modules"]["audio_stego"]["capabilities"]) > 0
 
     # Future phases remain truthfully pending
-    assert data["modules"]["audio_stego"]["status"] == "pending"
     assert data["modules"]["video_stego"]["status"] == "pending"
     assert data["modules"]["allocation"]["status"] == "pending"
     assert data["modules"]["steganalysis"]["status"] == "pending"
@@ -327,5 +328,136 @@ class TestImageStegoAPIEndpoints:
         res = client.post(
             "/api/image/capacity",
             files={"image": ("bad.png", b"NOT_A_PNG_FILE_DATA", "image/png")}
+        )
+        assert res.status_code == 400
+
+
+# ---------------------------------------------------------
+# Audio Steganography API Endpoint Tests (Phase 4)
+# ---------------------------------------------------------
+
+def make_test_wav_bytes(channels: int = 1, sample_rate: int = 44100, duration: float = 0.5) -> bytes:
+    """Helper to generate in-memory PCM WAV bytes for API tests."""
+    import wave
+    num_frames = int(sample_rate * duration)
+    t = np.linspace(0, duration, num_frames, endpoint=False)
+    samples = (np.sin(2 * np.pi * 440 * t) * 16000).astype(np.int16)
+    if channels == 2:
+        interleaved = np.empty((num_frames * 2,), dtype=np.int16)
+        interleaved[0::2] = samples
+        interleaved[1::2] = samples
+        raw = interleaved.tobytes()
+    else:
+        raw = samples.tobytes()
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(raw)
+    return buf.getvalue()
+
+
+class TestAudioStegoAPIEndpoints:
+    """Integration test suite for audio steganography REST API endpoints."""
+
+    def test_audio_capacity_endpoint(self, client):
+        wav_bytes = make_test_wav_bytes(channels=2, sample_rate=44100, duration=1.0)
+        res = client.post(
+            "/api/audio/capacity",
+            files={"audio": ("test.wav", wav_bytes, "audio/wav")}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["num_channels"] == 2
+        assert data["channel_layout"] == "Stereo"
+        assert data["sample_rate"] == 44100
+        assert data["bits_per_sample"] == 16
+        assert data["total_samples"] == 88200
+        assert data["total_carrier_bits"] == 88200
+        assert data["total_carrier_bytes"] == 88200 // 8
+        assert data["header_overhead_bytes"] == 14
+        assert data["max_usable_payload_bytes"] == (88200 // 8) - 14
+
+    def test_audio_embed_and_extract_end_to_end_pipeline(self, client):
+        original_secret = "Confidential audio research secret 🎵"
+        enc_res = client.post("/api/crypto/encrypt", json={"plaintext": original_secret, "encoding": "base64"})
+        assert enc_res.status_code == 200
+        enc_data = enc_res.json()
+        envelope_b64 = enc_data["envelope"]
+        secret_key_b64 = enc_data["key"]
+
+        # 1. Check Capacity of a 1.0s stereo WAV
+        cover_wav = make_test_wav_bytes(channels=2, sample_rate=44100, duration=1.0)
+        cap_res = client.post(
+            "/api/audio/capacity",
+            files={"audio": ("carrier.wav", cover_wav, "audio/wav")}
+        )
+        assert cap_res.status_code == 200
+        assert cap_res.json()["max_usable_payload_bytes"] > enc_data["envelope_bytes_length"]
+
+        # 2. Embed envelope into WAV
+        embed_res = client.post(
+            "/api/audio/embed",
+            files={"audio": ("carrier.wav", cover_wav, "audio/wav")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 200
+        embed_data = embed_res.json()
+        assert "data:audio/wav;base64," in embed_data["stego_audio_data_url"]
+        assert embed_data["metrics"]["snr"] > 50.0  # High fidelity
+
+        # 3. Decode data URL to WAV bytes
+        data_url = embed_data["stego_audio_data_url"]
+        b64_content = data_url.split(",", 1)[1]
+        stego_wav_bytes = base64.b64decode(b64_content)
+
+        # 4. Extract envelope from stego WAV
+        extract_res = client.post(
+            "/api/audio/extract",
+            files={"audio": ("stego.wav", stego_wav_bytes, "audio/wav")},
+            data={"encoding": "base64"}
+        )
+        assert extract_res.status_code == 200
+        extract_data = extract_res.json()
+        assert extract_data["envelope"] == envelope_b64
+
+        # 5. Decrypt envelope
+        dec_res = client.post(
+            "/api/crypto/decrypt",
+            json={"envelope": extract_data["envelope"], "key": secret_key_b64, "encoding": "base64"}
+        )
+        assert dec_res.status_code == 200
+        assert dec_res.json()["plaintext"] == original_secret
+        assert dec_res.json()["authenticated"] is True
+
+    def test_audio_embed_insufficient_capacity_returns_400(self, client):
+        # 0.05s mono WAV at 1000 Hz = 50 samples (< 112 bits for header)
+        short_wav = make_test_wav_bytes(channels=1, sample_rate=1000, duration=0.05)
+        enc_res = client.post("/api/crypto/encrypt", json={"plaintext": "A" * 30})
+        envelope_b64 = enc_res.json()["envelope"]
+
+        embed_res = client.post(
+            "/api/audio/embed",
+            files={"audio": ("short.wav", short_wav, "audio/wav")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 400
+        assert "exceeds audio carrier capacity" in embed_res.json()["detail"]
+
+    def test_audio_extract_non_stego_audio_returns_400(self, client):
+        clean_wav = make_test_wav_bytes(channels=1, sample_rate=44100, duration=0.5)
+        res = client.post(
+            "/api/audio/extract",
+            files={"audio": ("clean.wav", clean_wav, "audio/wav")},
+            data={"encoding": "base64"}
+        )
+        assert res.status_code == 400
+        assert "Extraction failed" in res.json()["detail"]
+
+    def test_audio_invalid_file_returns_400(self, client):
+        res = client.post(
+            "/api/audio/capacity",
+            files={"audio": ("bad.wav", b"NOT_A_VALID_WAV_FILE_HEADER", "audio/wav")}
         )
         assert res.status_code == 400

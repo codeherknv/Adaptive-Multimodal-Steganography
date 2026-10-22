@@ -46,16 +46,17 @@ const PHASES_DATA: PhaseItem[] = [
   },
   {
     id: 4,
-    title: "Frontend-Backend Roundtrip Integration",
-    scope: "Integrate React Sender and Receiver workflows with backend encryption and PNG embedding endpoints.",
-    acceptanceCriteria: "End-to-end roundtrip: plaintext → encrypt → embed in PNG → extract → decrypt → verify.",
-    status: "staged",
+    title: "PCM WAV Audio Steganography",
+    scope: "Implement 16-bit & 8-bit PCM WAV audio embedding and extraction while preserving RIFF/WAV headers and measuring SNR/MSE distortion.",
+    acceptanceCriteria: "Exact extraction verified; SNR and normalized MSE measured; sample rate, channels, bit depth, and duration preserved; WSTG framing validated.",
+    status: "completed",
+    verificationEvidence: "90 automated tests passing; WAV sample LSB round trips (mono & stereo), WSTG 14-byte framing, CRC32 checks, SNR/MSE metrics verified."
   },
   {
     id: 5,
-    title: "PCM WAV Audio Steganography",
-    scope: "Implement 16-bit PCM WAV audio embedding and extraction while preserving RIFF/WAV audio headers.",
-    acceptanceCriteria: "Exact extraction verified; SNR distortion measured; sample rate and channel structure preserved.",
+    title: "Frame-Based Video Steganography",
+    scope: "Video container processing using OpenCV/FFmpeg with frame-level spatial embedding and payload framing.",
+    acceptanceCriteria: "Frame index synchronization; container format preservation; document compression limitations.",
     status: "staged",
   },
   {

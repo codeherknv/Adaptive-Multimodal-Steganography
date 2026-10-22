@@ -113,9 +113,9 @@ export const SystemPipeline: React.FC = () => {
                 <span>PNG (Live)</span>
               </span>
               <span>•</span>
-              <span className="flex items-center space-x-1 text-zinc-500" title="WAV PCM Planned">
+              <span className="flex items-center space-x-1 text-emerald-400 font-medium" title="PCM WAV LSB Implemented">
                 <Music className="w-3 h-3" />
-                <span>Aud</span>
+                <span>WAV (Live)</span>
               </span>
               <span>•</span>
               <span className="flex items-center space-x-1 text-zinc-500" title="Video frames Planned">
@@ -125,7 +125,7 @@ export const SystemPipeline: React.FC = () => {
             </div>
           </div>
           <div className="text-[10px] font-mono text-emerald-400/80 pt-2 border-t border-canvas-borderSubtle">
-            Phase 3 PNG Verified
+            Phase 3 & 4 Verified
           </div>
         </div>
 
@@ -141,11 +141,11 @@ export const SystemPipeline: React.FC = () => {
               <span>Extraction & Auth</span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-1">
-              PSTG framing extraction & authenticated AES-256-GCM verification.
+              PSTG & WSTG framing extraction & authenticated AES-256-GCM verification.
             </p>
           </div>
           <div className="text-[10px] font-mono text-emerald-400/80 pt-2 border-t border-canvas-borderSubtle">
-            Phase 3 Verified
+            Phase 3 & 4 Verified
           </div>
         </div>
 

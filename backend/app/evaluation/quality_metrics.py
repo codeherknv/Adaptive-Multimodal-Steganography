@@ -171,3 +171,144 @@ def evaluate_image_quality(
         "psnr_display": "Infinity (Identical)" if math.isinf(psnr) else f"{round(psnr, 2)} dB",
         "ssim": round(ssim, 6),
     }
+
+
+# ---------------------------------------------------------
+# Audio Quality & Distortion Metrics (Phase 4)
+# ---------------------------------------------------------
+
+def validate_audio_pair(cover: np.ndarray, stego: np.ndarray) -> None:
+    """Validate that two audio sample arrays are compatible for distortion comparison.
+
+    Args:
+        cover: Original cover audio samples as a 1D or 2D NumPy array.
+        stego: Stego audio samples as a NumPy array with identical shape.
+
+    Raises:
+        TypeError: If either input is not a NumPy array.
+        ValueError: If array shapes do not match or arrays are empty.
+    """
+    if not isinstance(cover, np.ndarray) or not isinstance(stego, np.ndarray):
+        raise TypeError("Both cover and stego audio inputs must be numpy ndarrays.")
+    if cover.shape != stego.shape:
+        raise ValueError(
+            f"Audio sample dimensions must match: cover shape {cover.shape} != stego shape {stego.shape}."
+        )
+    if cover.size == 0:
+        raise ValueError("Audio sample arrays cannot be empty.")
+
+
+def calculate_audio_mse(
+    cover: np.ndarray,
+    stego: np.ndarray,
+    sampwidth: int = 2
+) -> float:
+    """Calculate Mean Squared Error (MSE) between normalized cover and stego audio samples.
+
+    Educational Note for Students:
+    Audio samples are normalized to the range [-1.0, 1.0] before computing MSE so that
+    distortion measurements are invariant to sample width (e.g. 8-bit vs. 16-bit PCM).
+    For 16-bit signed PCM, samples in [-32768, 32767] are divided by 32768.0.
+    For 8-bit unsigned PCM, samples in [0, 255] are shifted and scaled via (x - 128) / 128.0.
+
+    Formula:
+        MSE = (1 / N) * sum((cover_norm[n] - stego_norm[n]) ** 2)
+
+    Args:
+        cover: Original cover audio samples array.
+        stego: Stego audio samples array.
+        sampwidth: Bytes per sample (1 for 8-bit PCM, 2 for 16-bit PCM).
+
+    Returns:
+        Non-negative float MSE. Returns 0.0 for identical audio.
+    """
+    validate_audio_pair(cover, stego)
+
+    if sampwidth == 2:
+        cover_norm = cover.astype(np.float64) / 32768.0
+        stego_norm = stego.astype(np.float64) / 32768.0
+    elif sampwidth == 1:
+        cover_norm = (cover.astype(np.float64) - 128.0) / 128.0
+        stego_norm = (stego.astype(np.float64) - 128.0) / 128.0
+    else:
+        # Default fallback to peak amplitude normalization
+        max_possible = float(2 ** (sampwidth * 8 - 1)) if sampwidth > 0 else 1.0
+        cover_norm = cover.astype(np.float64) / max_possible
+        stego_norm = stego.astype(np.float64) / max_possible
+
+    err = np.mean((cover_norm - stego_norm) ** 2)
+    return float(err)
+
+
+def calculate_audio_snr(
+    cover: np.ndarray,
+    stego: np.ndarray
+) -> float:
+    """Calculate the Signal-to-Noise Ratio (SNR) in decibels (dB) between cover and stego audio.
+
+    Educational Note for Students:
+    In audio steganography, the original audio signal is treated as the 'signal' and the
+    difference introduced by steganographic bit substitution is treated as the 'noise' (error):
+        Signal: s[n] = cover[n]
+        Noise:  e[n] = cover[n] - stego[n]
+
+    Formula:
+        P_signal = (1 / N) * sum(s[n] ** 2)
+        P_noise  = (1 / N) * sum(e[n] ** 2)
+        SNR (dB) = 10 * log10(P_signal / P_noise)
+
+    Scientific Caution:
+    SNR is a physical fidelity measurement of signal energy relative to distortion energy.
+    A high SNR (e.g. > 60 dB) indicates low physical perturbation, but it does NOT guarantee
+    inaudibility under all listening conditions (psychoacoustic masking is not modeled by SNR),
+    nor does it prove resistance against statistical or machine-learning audio steganalysis.
+
+    Args:
+        cover: Original cover audio samples array.
+        stego: Stego audio samples array.
+
+    Returns:
+        SNR in dB as a float, or float('inf') if cover and stego are identical.
+    """
+    validate_audio_pair(cover, stego)
+
+    cover_f = cover.astype(np.float64)
+    stego_f = stego.astype(np.float64)
+    noise_f = cover_f - stego_f
+
+    noise_power = np.mean(noise_f ** 2)
+    if noise_power == 0.0:
+        return float("inf")
+
+    signal_power = np.mean(cover_f ** 2)
+    if signal_power == 0.0:
+        # Cover audio is completely silent
+        return float("-inf")
+
+    snr = 10.0 * math.log10(signal_power / noise_power)
+    return float(snr)
+
+
+def evaluate_audio_quality(
+    cover: np.ndarray,
+    stego: np.ndarray,
+    sampwidth: int = 2
+) -> Dict[str, Union[float, str]]:
+    """Compute standard audio distortion and fidelity metrics comparing cover to stego audio.
+
+    Args:
+        cover: Original cover audio samples.
+        stego: Stego audio samples.
+        sampwidth: Bytes per sample (1 or 2).
+
+    Returns:
+        Dictionary containing 'mse', 'snr', and human-readable 'snr_display'.
+    """
+    mse = calculate_audio_mse(cover, stego, sampwidth=sampwidth)
+    snr = calculate_audio_snr(cover, stego)
+
+    return {
+        "mse": round(mse, 8),
+        "snr": snr if math.isinf(snr) else round(snr, 4),
+        "snr_display": "Infinity (Identical)" if math.isinf(snr) else f"{round(snr, 2)} dB"
+    }

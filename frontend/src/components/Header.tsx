@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Adaptive Stego Lab
               </span>
               <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / Phase 3 Live
+                / Phase 4 Live
               </span>
             </div>
           </div>
@@ -84,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Sender (PNG LSB)</span>
+            <span>Sender (Embed)</span>
             <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
           </button>
 

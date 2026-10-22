@@ -396,9 +396,134 @@ To quantify acoustic alteration after steganographic embedding, the evaluation e
 
 ---
 
-## 10. Test Execution & Verification
+## 10. Frame-Based Video Steganography Architecture
 
-To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, and quality metrics):
+The video steganography engine (`backend/app/media/video_stego.py`) implements multi-frame spatial least-significant-bit (LSB) embedding and extraction across video frames using OpenCV (`cv2`) and lossless video codecs.
+
+### 1. Carrier Video Format & Lossless Codec Selection
+- **Lossless Codec Imperative**:
+  Lossy video compression (such as H.264/AVC, H.265/HEVC, VP9, AV1, or MPEG-4) applies lossy transform quantization (DCT), motion compensation prediction errors, and chroma subsampling (4:2:0). These operations alter raw pixel values across frames, completely corrupting spatial LSB modifications.
+  The engine dynamically discovers operational lossless codecs on the host system:
+  1. **FFV1 (Fast Forward Video Codec 1)**: IETF RFC 9043 lossless intra/inter-frame video codec. Encoded in an AVI (`.avi`) or Matroska (`.mkv`) container.
+  2. **HuffYUV (HFYU)**: Lossless Huffman-coded YUV/RGB video codec.
+- **Dynamic Codec Negotiation**:
+  The system probes `cv2.VideoWriter` capabilities upon initialization (`detect_available_lossless_codec()`). If no operational lossless encoder is available in OpenCV, the engine raises `CodecUnavailableError` rather than silently producing corrupted or lossy output.
+
+### 2. Video Binary Framing Header (`VSTG`)
+To maintain strict separation between media carriers, video payloads use a distinct 14-byte binary framing header:
+
+```
++--------------------+----------------+-----------------+----------------------------------------+
+| Field              | Size / Type    | Byte Offset     | Description                            |
++--------------------+----------------+-----------------+----------------------------------------+
+| Magic Signature    | 4 bytes        | 0 - 3           | Fixed ASCII b"VSTG" (Video Stego)      |
+| Format Version     | 1 byte uint8   | 4               | 0x01                                   |
+| Reserved           | 1 byte uint8   | 5               | 0x00                                   |
+| Payload Length (L) | 4 bytes uint32 | 6 - 9           | Exact byte length of embedded envelope |
+| Payload CRC32      | 4 bytes uint32 | 10 - 13         | IEEE 802.3 CRC32 of embedded payload   |
++--------------------+----------------+-----------------+----------------------------------------+
+| Embedded Payload   | L bytes        | 14 - (14+L-1)   | AES-256-GCM encrypted envelope bytes  |
++--------------------+----------------+-----------------+----------------------------------------+
+```
+
+### 3. Multi-Frame Sequential Embedding Algorithm
+1. The video stream is decoded into a sequence of $F$ color frames of resolution $W \times H \times 3$ (BGR channels).
+2. The framed bitstream (112 header bits $+ L \times 8$ payload bits) is flattened into a 1D sequence of bits.
+3. Bits are substituted into the least significant bit of color channels starting at Frame 0, Row 0, Column 0, Channel 0:
+   $$\text{stego\_pixel} = (\text{cover\_pixel} \ \& \ \text{0xFE}) \ | \ \text{bit}$$
+4. Once all bits are embedded, any remaining frames in the video container remain **100% bit-exact and unaltered**.
+5. The container parameters (frame width, height, frame rate, and total frame count) are strictly preserved.
+
+---
+
+## 11. Video Quality Distortion Metrics
+
+To quantify spatial alteration across the video stream, the evaluation engine (`backend/app/evaluation/quality_metrics.py`) implements:
+
+1. **Average Frame Mean Squared Error (MSE)**:
+   $$\text{MSE}_f = \frac{1}{H \times W \times C} \sum_{y=0}^{H-1} \sum_{x=0}^{W-1} \sum_{c=0}^{C-1} [I_1(y, x, c) - I_2(y, x, c)]^2$$
+   $$\text{Average MSE} = \frac{1}{F} \sum_{f=0}^{F-1} \text{MSE}_f$$
+2. **Average Frame Peak Signal-to-Noise Ratio (PSNR)**:
+   $$\text{PSNR} = 10 \cdot \log_{10}\left(\frac{255^2}{\text{Average MSE}}\right)$$
+   - Expressed in decibels (dB). For low payload densities, PSNR typically exceeds $60\text{ dB}$.
+   - For identical videos ($\text{MSE} = 0$), the implementation returns `math.inf` (displayed as `"Infinity (Identical)"`).
+   - **Critical Research Note**: Frame MSE and PSNR measure spatial pixel-level fidelity relative to the cover video. They do **not** guarantee resistance against temporal or inter-frame video steganalysis (e.g. motion vector distribution analysis, inter-frame difference statistics), which will be investigated in Phase 8.
+
+---
+
+## 12. Video Steganography API Endpoints
+
+### 1. `POST /api/video/capacity`
+- **Request**: Multipart form data with `video` (AVI, MKV, MP4 file).
+- **Response**:
+  ```json
+  {
+    "width": 80,
+    "height": 60,
+    "channels_per_frame": 3,
+    "num_frames": 5,
+    "fps": 25.0,
+    "duration_seconds": 0.2,
+    "total_carrier_bits": 72000,
+    "total_carrier_bytes": 9000,
+    "header_overhead_bytes": 14,
+    "max_usable_payload_bytes": 8986,
+    "recommended_codec": "FFV1",
+    "container_format": "AVI"
+  }
+  ```
+
+### 2. `POST /api/video/embed`
+- **Request**: Multipart form data:
+  - `video`: Cover video carrier file.
+  - `envelope`: Encrypted envelope string.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "stego_video_data_url": "data:video/avi;base64,Uk...",
+    "preview_frame_data_url": "data:image/png;base64,iV...",
+    "filename": "stego_carrier.avi",
+    "embedded_bytes": 121,
+    "metrics": {
+      "average_mse": 0.007611,
+      "average_psnr": 69.32,
+      "psnr_display": "69.32 dB",
+      "total_frames": 5,
+      "modified_frames": 1,
+      "embedded_bytes": 121,
+      "framed_bytes": 135,
+      "capacity_used_ratio": 0.015,
+      "width": 80,
+      "height": 60,
+      "fps": 25.0,
+      "duration_seconds": 0.2
+    },
+    "message": "Payload successfully embedded into video frames using spatial LSB."
+  }
+  ```
+
+### 3. `POST /api/video/extract`
+- **Request**: Multipart form data:
+  - `video`: Stego video carrier file.
+  - `encoding`: `"base64"` or `"hex"` (default: `"base64"`).
+- **Response**:
+  ```json
+  {
+    "envelope": "<EXTRACTED_ENVELOPE_STRING>",
+    "encoding": "base64",
+    "envelope_bytes_length": 121,
+    "envelope_version": 1,
+    "status": "verified",
+    "message": "Successfully extracted and verified authenticated envelope from video carrier."
+  }
+  ```
+
+---
+
+## 13. Test Execution & Verification
+
+To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, video stego, and quality metrics):
 
 ```powershell
 cd backend
@@ -406,4 +531,4 @@ cd backend
 pytest -v
 ```
 
-All **90 unit and integration tests** pass with zero errors.
+All **110 unit and integration tests** pass with zero errors.

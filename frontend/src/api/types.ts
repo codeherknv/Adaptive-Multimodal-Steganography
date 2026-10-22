@@ -148,3 +148,55 @@ export interface AudioExtractResponse {
   status: 'verified';
   message: string;
 }
+
+// ---------------------------------------------------------
+// Video Steganography Types (Phase 5)
+// ---------------------------------------------------------
+
+export interface VideoCapacityResponse {
+  width: number;
+  height: number;
+  channels_per_frame: number;
+  num_frames: number;
+  fps: number;
+  duration_seconds: number;
+  total_carrier_bits: number;
+  total_carrier_bytes: number;
+  header_overhead_bytes: number;
+  max_usable_payload_bytes: number;
+  recommended_codec: string;
+  container_format: string;
+}
+
+export interface VideoQualityMetrics {
+  average_mse: number;
+  average_psnr: number | string;
+  psnr_display: string;
+  total_frames: number;
+  modified_frames: number;
+  embedded_bytes: number;
+  framed_bytes: number;
+  capacity_used_ratio: number;
+  width: number;
+  height: number;
+  fps: number;
+  duration_seconds: number;
+}
+
+export interface VideoEmbedResponse {
+  stego_video_data_url: string;
+  preview_frame_data_url: string;
+  filename: string;
+  embedded_bytes: number;
+  metrics: VideoQualityMetrics;
+  message: string;
+}
+
+export interface VideoExtractResponse {
+  envelope: string;
+  encoding: 'base64' | 'hex';
+  envelope_bytes_length: number;
+  envelope_version: number;
+  status: 'verified';
+  message: string;
+}

@@ -1,6 +1,7 @@
 """FastAPI route definitions for health, status, crypto, and image steganography."""
 
 import base64
+import os
 from datetime import datetime, timezone
 from typing import Literal
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
@@ -41,6 +42,16 @@ from app.media.audio_stego import (
     CarrierExtractionError as AudioExtractionError,
     UnsupportedAudioFormatError,
 )
+from app.media.video_stego import (
+    get_video_capacity,
+    embed_in_video,
+    extract_from_video,
+    VideoStegoError,
+    InsufficientCapacityError as VideoCapacityError,
+    CarrierExtractionError as VideoExtractionError,
+    UnsupportedVideoFormatError,
+    CodecUnavailableError,
+)
 from app.schemas import (
     HealthResponse,
     SystemStatusResponse,
@@ -57,6 +68,10 @@ from app.schemas import (
     AudioQualityMetricsResponse,
     AudioEmbedResponse,
     AudioExtractResponse,
+    VideoCapacityResponse,
+    VideoQualityMetricsResponse,
+    VideoEmbedResponse,
+    VideoExtractResponse,
 )
 
 router = APIRouter()
@@ -151,10 +166,18 @@ async def get_system_status() -> SystemStatusResponse:
         ),
         "video_stego": ModuleStatus(
             name="Frame-Based Video Steganography",
-            phase=6,
-            status="pending",
-            description="Video frame extraction and embedding with container preservation.",
-            capabilities=[]
+            phase=5,
+            status="implemented",
+            description="Lossless video carrier (FFV1/AVI) multi-frame spatial LSB embedding and extraction with VSTG framing.",
+            capabilities=[
+                "Lossless Video Container Encoding (FFV1 / HFYU in AVI)",
+                "14-Byte Binary VSTG Framing",
+                "Multi-Frame Spatial LSB Embedding & Extraction",
+                "Video Dimensions & FPS Preservation",
+                "CRC32 Pre-Check Integrity",
+                "Video Capacity Estimation",
+                "Average Frame MSE & PSNR Distortion Metrics"
+            ]
         ),
         "allocation": ModuleStatus(
             name="Payload Allocation Engine",
@@ -182,7 +205,7 @@ async def get_system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=4,
+        current_phase=5,
         modules=modules
     )
 
@@ -651,4 +674,182 @@ async def extract_envelope_from_audio(
         envelope_version=version,
         status="verified",
         message="Successfully extracted and verified authenticated envelope from WAV carrier."
+    )
+
+
+# ---------------------------------------------------------
+# Video Steganography Endpoints (Phase 5)
+# ---------------------------------------------------------
+
+@router.post(
+    "/video/capacity",
+    response_model=VideoCapacityResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Estimate Video Carrier Payload Capacity",
+    description="Inspects an uploaded video file and calculates its maximum usable LSB payload capacity across frames."
+)
+async def check_video_capacity(
+    video: UploadFile = File(..., description="Video carrier file")
+) -> VideoCapacityResponse:
+    contents = await video.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    try:
+        capacity_info = get_video_capacity(contents)
+        return VideoCapacityResponse(**capacity_info)
+    except UnsupportedVideoFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except CodecUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to process video: {str(e)}"
+        )
+
+
+@router.post(
+    "/video/embed",
+    response_model=VideoEmbedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Embed Encrypted Envelope into Video Frames",
+    description="Embeds a Phase 2 encrypted envelope into video frames using spatial LSB substitution."
+)
+async def embed_envelope_in_video(
+    video: UploadFile = File(..., description="Cover video carrier file"),
+    envelope: str = Form(..., description="Encrypted binary envelope (from /crypto/encrypt)"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Encoding of the supplied envelope")
+) -> VideoEmbedResponse:
+    contents = await video.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Decode envelope string to bytes
+    try:
+        envelope_bytes = bytes_from_base64(envelope) if encoding == "base64" else bytes_from_hex(envelope)
+    except InvalidKeyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid envelope {encoding} encoding: {str(e)}"
+        )
+
+    # 2. Validate that the payload is a valid Phase 2 envelope
+    try:
+        unpack_envelope(envelope_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Embed into carrier video
+    try:
+        stego_video_bytes, metrics_dict, preview_png_bytes = embed_in_video(contents, envelope_bytes)
+    except VideoCapacityError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except UnsupportedVideoFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except CodecUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Video embedding failed: {str(e)}"
+        )
+
+    # 4. Format stego video as base64 data URL for download and preview PNG
+    b64_video = base64.b64encode(stego_video_bytes).decode("ascii")
+    video_data_url = f"data:video/avi;base64,{b64_video}"
+
+    b64_preview = base64.b64encode(preview_png_bytes).decode("ascii")
+    preview_data_url = f"data:image/png;base64,{b64_preview}"
+
+    quality_metrics = VideoQualityMetricsResponse(
+        average_mse=metrics_dict["average_mse"],
+        average_psnr=metrics_dict["average_psnr"],
+        psnr_display=metrics_dict["psnr_display"],
+        total_frames=metrics_dict["total_frames"],
+        modified_frames=metrics_dict["modified_frames"],
+        embedded_bytes=metrics_dict["embedded_bytes"],
+        framed_bytes=metrics_dict["framed_bytes"],
+        capacity_used_ratio=metrics_dict["capacity_used_ratio"],
+        width=metrics_dict["width"],
+        height=metrics_dict["height"],
+        fps=metrics_dict["fps"],
+        duration_seconds=metrics_dict["duration_seconds"],
+    )
+
+    filename_stem = video.filename or "carrier.avi"
+    base_name = os.path.splitext(filename_stem)[0]
+
+    return VideoEmbedResponse(
+        stego_video_data_url=video_data_url,
+        preview_frame_data_url=preview_data_url,
+        filename=f"stego_{base_name}.avi",
+        embedded_bytes=len(envelope_bytes),
+        metrics=quality_metrics,
+        message="Payload successfully embedded into video frames using spatial LSB."
+    )
+
+
+@router.post(
+    "/video/extract",
+    response_model=VideoExtractResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract Encrypted Envelope from Stego Video",
+    description="Extracts the embedded Phase 2 envelope from a stego video file and verifies VSTG framing integrity."
+)
+async def extract_envelope_from_video(
+    video: UploadFile = File(..., description="Stego video carrier file"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Desired output encoding format")
+) -> VideoExtractResponse:
+    contents = await video.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    # 1. Extract payload bytes from video
+    try:
+        extracted_bytes = extract_from_video(contents)
+    except VideoExtractionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extraction failed: {str(e)}"
+        )
+    except UnsupportedVideoFormatError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Carrier extraction failed: {str(e)}"
+        )
+
+    # 2. Validate extracted payload as a Phase 2 envelope
+    try:
+        version, _, _, _ = unpack_envelope(extracted_bytes)
+    except MalformedEnvelopeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extracted payload is not a valid encrypted envelope: {str(e)}"
+        )
+
+    # 3. Format envelope
+    encode_func = bytes_to_base64 if encoding == "base64" else bytes_to_hex
+
+    return VideoExtractResponse(
+        envelope=encode_func(extracted_bytes),
+        encoding=encoding,
+        envelope_bytes_length=len(extracted_bytes),
+        envelope_version=version,
+        status="verified",
+        message="Successfully extracted and verified authenticated envelope from video carrier."
     )

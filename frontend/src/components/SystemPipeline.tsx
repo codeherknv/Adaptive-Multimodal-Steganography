@@ -101,7 +101,7 @@ export const SystemPipeline: React.FC = () => {
         <div className="border border-canvas-border bg-canvas-elevated/40 rounded-md p-3.5 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Step 4</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/60">Partial</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/60">Live</span>
           </div>
           <div className="my-2.5">
             <div className="text-zinc-200 font-medium text-xs mb-1">
@@ -118,14 +118,14 @@ export const SystemPipeline: React.FC = () => {
                 <span>WAV (Live)</span>
               </span>
               <span>•</span>
-              <span className="flex items-center space-x-1 text-zinc-500" title="Video frames Planned">
+              <span className="flex items-center space-x-1 text-emerald-400 font-medium" title="Video Multi-Frame LSB Implemented">
                 <Video className="w-3 h-3" />
-                <span>Vid</span>
+                <span>Vid (Live)</span>
               </span>
             </div>
           </div>
           <div className="text-[10px] font-mono text-emerald-400/80 pt-2 border-t border-canvas-borderSubtle">
-            Phase 3 & 4 Verified
+            Phase 3, 4 & 5 Verified
           </div>
         </div>
 
@@ -141,11 +141,11 @@ export const SystemPipeline: React.FC = () => {
               <span>Extraction & Auth</span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-1">
-              PSTG & WSTG framing extraction & authenticated AES-256-GCM verification.
+              PSTG, WSTG & VSTG framing extraction & authenticated AES-256-GCM verification.
             </p>
           </div>
           <div className="text-[10px] font-mono text-emerald-400/80 pt-2 border-t border-canvas-borderSubtle">
-            Phase 3 & 4 Verified
+            Phase 3, 4 & 5 Verified
           </div>
         </div>
 

@@ -281,3 +281,74 @@ class AudioExtractResponse(BaseModel):
         "Successfully extracted authenticated envelope from audio carrier.",
         description="Status message."
     )
+
+
+# ---------------------------------------------------------
+# Video Steganography Schemas (Phase 5)
+# ---------------------------------------------------------
+
+class VideoCapacityResponse(BaseModel):
+    """Capacity estimation metrics for a video carrier."""
+    width: int
+    height: int
+    channels_per_frame: int
+    num_frames: int
+    fps: float
+    duration_seconds: float
+    total_carrier_bits: int
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+    recommended_codec: str
+    container_format: str
+
+
+class VideoQualityMetricsResponse(BaseModel):
+    """Distortion fidelity metrics computed across video frames."""
+    average_mse: float
+    average_psnr: Union[float, str]
+    psnr_display: str
+    total_frames: int
+    modified_frames: int
+    embedded_bytes: int
+    framed_bytes: int
+    capacity_used_ratio: float
+    width: int
+    height: int
+    fps: float
+    duration_seconds: float
+
+
+class VideoEmbedResponse(BaseModel):
+    """Response containing stego video data URL, keyframe preview, and distortion metrics."""
+    stego_video_data_url: str = Field(
+        ...,
+        description="Base64 data URL (data:video/avi;base64,...) for immediate browser download."
+    )
+    preview_frame_data_url: str = Field(
+        ...,
+        description="Base64 PNG data URL of the first frame for immediate browser preview."
+    )
+    filename: str = Field("stego_carrier.avi", description="Suggested output filename.")
+    embedded_bytes: int
+    metrics: VideoQualityMetricsResponse
+    message: str = Field(
+        "Payload successfully embedded into video frames using spatial LSB.",
+        description="Status message."
+    )
+
+
+class VideoExtractResponse(BaseModel):
+    """Response containing extracted encrypted envelope from video carrier."""
+    envelope: str = Field(
+        ...,
+        description="Extracted Phase 2 binary envelope encoded in requested format."
+    )
+    encoding: Literal["base64", "hex"]
+    envelope_bytes_length: int
+    envelope_version: int
+    status: Literal["verified"] = "verified"
+    message: str = Field(
+        "Successfully extracted authenticated envelope from video carrier.",
+        description="Status message."
+    )

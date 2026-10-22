@@ -12,6 +12,9 @@ import {
   AudioCapacityResponse,
   AudioEmbedResponse,
   AudioExtractResponse,
+  VideoCapacityResponse,
+  VideoEmbedResponse,
+  VideoExtractResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -122,6 +125,47 @@ export const extractFromAudio = async (
   formData.append('audio', file);
   formData.append('encoding', encoding);
   const response = await apiClient.post<AudioExtractResponse>('/audio/extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+// ---------------------------------------------------------
+// Video Steganography API (Phase 5)
+// ---------------------------------------------------------
+
+export const checkVideoCapacity = async (file: File): Promise<VideoCapacityResponse> => {
+  const formData = new FormData();
+  formData.append('video', file);
+  const response = await apiClient.post<VideoCapacityResponse>('/video/capacity', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const embedInVideo = async (
+  file: File,
+  envelope: string,
+  encoding: 'base64' | 'hex' = 'base64'
+): Promise<VideoEmbedResponse> => {
+  const formData = new FormData();
+  formData.append('video', file);
+  formData.append('envelope', envelope);
+  formData.append('encoding', encoding);
+  const response = await apiClient.post<VideoEmbedResponse>('/video/embed', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const extractFromVideo = async (
+  file: File,
+  encoding: 'base64' | 'hex' = 'base64'
+): Promise<VideoExtractResponse> => {
+  const formData = new FormData();
+  formData.append('video', file);
+  formData.append('encoding', encoding);
+  const response = await apiClient.post<VideoExtractResponse>('/video/extract', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;

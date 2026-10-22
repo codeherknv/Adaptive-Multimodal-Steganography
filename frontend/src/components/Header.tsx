@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Adaptive Stego Lab
               </span>
               <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / Phase 4 Live
+                / Phase 5 Live
               </span>
             </div>
           </div>

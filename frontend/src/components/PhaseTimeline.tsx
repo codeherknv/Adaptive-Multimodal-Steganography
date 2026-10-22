@@ -55,15 +55,16 @@ const PHASES_DATA: PhaseItem[] = [
   {
     id: 5,
     title: "Frame-Based Video Steganography",
-    scope: "Video container processing using OpenCV/FFmpeg with frame-level spatial embedding and payload framing.",
-    acceptanceCriteria: "Frame index synchronization; container format preservation; document compression limitations.",
-    status: "staged",
+    scope: "Lossless video container processing using OpenCV with multi-frame spatial LSB embedding, VSTG framing, and average frame MSE/PSNR metrics.",
+    acceptanceCriteria: "Exact extraction verified; dimensions and frame rate preserved; lossless codec availability checked; VSTG framing validated.",
+    status: "completed",
+    verificationEvidence: "110 automated tests passing; multi-frame spatial LSB round trips, VSTG 14-byte framing, CRC32 checks, average frame MSE & PSNR metrics verified."
   },
   {
     id: 6,
-    title: "Frame-Based Video Steganography",
-    scope: "Video container processing using OpenCV/FFmpeg with frame-level spatial embedding and payload framing.",
-    acceptanceCriteria: "Frame index synchronization; container format preservation; document compression limitations.",
+    title: "Fixed Multimodal Payload Allocation & Recovery",
+    scope: "Implement deterministic fixed chunk distribution across image, audio, and video carrier sets.",
+    acceptanceCriteria: "Multi-carrier reassembly handles missing/out-of-order chunks safely; authenticated verification holds.",
     status: "staged",
   },
   {
@@ -120,8 +121,8 @@ const PHASES_DATA: PhaseItem[] = [
 export const PhaseTimeline: React.FC = () => {
   const [showAllPhases, setShowAllPhases] = useState<boolean>(false);
 
-  // By default, display through Phase 4 to maintain compact view, with toggle to inspect full 14-phase curriculum
-  const displayedPhases = showAllPhases ? PHASES_DATA : PHASES_DATA.slice(0, 5);
+  // By default, display through Phase 5 to maintain compact view, with toggle to inspect full curriculum
+  const displayedPhases = showAllPhases ? PHASES_DATA : PHASES_DATA.slice(0, 6);
 
   return (
     <section className="border border-canvas-border bg-canvas-surface rounded-lg p-6 space-y-4">

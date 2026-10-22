@@ -156,3 +156,39 @@ A critical finding for students and researchers:
   - **Phase & Derivative Discontinuities**: High-frequency spectral analysis can detect artificial high-frequency noise introduced by random LSB replacement.
 - **Core Principle**: An SNR exceeding $60\text{ dB}$ confirms high acoustic fidelity, but does **not** prove security against statistical audio steganalysis. Machine-learning audio steganalysis classifiers will be implemented in Phase 8 to empirically quantify detection boundaries.
 
+---
+
+## 8. Frame-Based Video Steganography & Temporal Considerations
+
+### 1. Temporal Extension of Spatial Steganography
+Video streams are temporal sequences of discrete 2D image frames:
+$$V = [F_0, F_1, F_2, \dots, F_{N-1}], \quad F_i \in \mathbb{R}^{H \times W \times C}$$
+The video steganography engine embeds payload bits into the spatial color channels (B, G, R) of frames sequentially. Because video carriers possess high dimensionality ($N \times H \times W \times 3$ subpixels), they offer substantially higher payload capacities than individual static images or short audio clips.
+
+### 2. Lossless Codec Mandate vs. Lossy Video Compression
+In academic steganography research, carrier integrity is paramount:
+- **Lossy Compression (H.264, H.265, VP9, AV1, MPEG-4)**:
+  Consumer video codecs achieve compression ratios exceeding $100:1$ through lossy spatial Discrete Cosine Transform (DCT) quantization, inter-frame motion estimation, and 4:2:0 chroma subsampling. These transformations alter high-frequency pixel variations, completely destroying spatial LSB modifications upon re-encoding.
+- **Lossless Codec Standard (FFV1 / HuffYUV)**:
+  To prevent silent bit corruption, the platform utilizes FFV1 (Fast Forward Video Codec 1, IETF RFC 9043) or HuffYUV (HFYU) in an AVI/MKV container. These codecs employ predictive intra-frame coding with entropy coding (variable-length Golomb-Rice or range coding), guaranteeing $100\%$ bit-exact sample reconstruction ($MSE = 0.0$ on carrier round-trips).
+
+### 3. Binary Framing Header (`VSTG`)
+To guarantee unambiguous extraction without relying on fragile sentinel markers, video payloads are framed with a 14-byte `b"VSTG"` header:
+- `b"VSTG"` magic signature (4 bytes)
+- Format version 1 (1 byte)
+- Reserved (1 byte)
+- Declared payload byte length $L$ (4 bytes uint32)
+- IEEE 802.3 CRC32 checksum (4 bytes uint32)
+
+Extraction begins at Frame 0, reads exactly 112 bits to parse the header, extracts the declared $L \times 8$ payload bits across frames, and validates the CRC32 checksum before passing the ciphertext to the cryptographic layer.
+
+### 4. Spatial Fidelity vs. Inter-Frame Video Steganalysis
+Students must understand the fundamental difference between spatial image steganalysis and temporal video steganalysis:
+- **Spatial Metrics (Average MSE & PSNR)**:
+  Measure the pixel-level Euclidean distance between cover frames and stego frames. While an average PSNR $> 60\text{ dB}$ confirms high visual fidelity to the human visual system, it models only spatial distortion.
+- **Inter-Frame Temporal Steganalysis**:
+  Video steganalysts exploit temporal correlations across consecutive frames:
+  1. **Optical Flow & Motion Vector Anomalies**: Embedding artificial noise into static background areas alters the statistical distribution of inter-frame residual errors.
+  2. **Inter-Frame Difference Histograms**: Natural video exhibits smooth temporal transitions; spatial LSB replacement increases inter-frame variance and decorrelates adjacent frames.
+- **Core Principle**: High video PSNR demonstrates spatial transparency, but does **not** prove resistance against temporal video steganalysis. Supervised classification of multimodal steganalytic features will be developed in Phase 8.
+

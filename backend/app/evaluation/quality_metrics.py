@@ -312,3 +312,87 @@ def evaluate_audio_quality(
         "snr": snr if math.isinf(snr) else round(snr, 4),
         "snr_display": "Infinity (Identical)" if math.isinf(snr) else f"{round(snr, 2)} dB"
     }
+
+
+# ---------------------------------------------------------
+# Video Quality Metrics (Phase 5)
+# ---------------------------------------------------------
+
+def validate_video_frame_pairs(
+    cover_frames: list,
+    stego_frames: list
+) -> None:
+    """Validate that two lists of video frames are compatible for distortion evaluation."""
+    if not isinstance(cover_frames, (list, tuple)) or not isinstance(stego_frames, (list, tuple)):
+        raise TypeError("Both cover_frames and stego_frames must be lists or tuples of numpy arrays.")
+    if len(cover_frames) != len(stego_frames):
+        raise ValueError(
+            f"Video frame counts must match: cover has {len(cover_frames)} frames, "
+            f"stego has {len(stego_frames)} frames."
+        )
+    if len(cover_frames) == 0:
+        raise ValueError("Video frame lists cannot be empty.")
+
+    for idx, (c_frame, s_frame) in enumerate(zip(cover_frames, stego_frames)):
+        if not isinstance(c_frame, np.ndarray) or not isinstance(s_frame, np.ndarray):
+            raise TypeError(f"Frame at index {idx} must be a numpy ndarray.")
+        if c_frame.shape != s_frame.shape:
+            raise ValueError(
+                f"Frame dimensions at index {idx} must match: cover {c_frame.shape} != stego {s_frame.shape}."
+            )
+
+
+def calculate_video_metrics(
+    cover_frames: list,
+    stego_frames: list
+) -> Dict[str, Union[float, str, int]]:
+    """Calculate objective video distortion metrics across all frames.
+
+    Scientific Caution for Cybersecurity Research:
+    Average frame MSE and PSNR measure spatial pixel-level fidelity relative to the cover video.
+    A high PSNR (> 50 dB) confirms low perceptual distortion, but does NOT prove resistance
+    against statistical or machine-learning video steganalysis (e.g. inter-frame temporal
+    motion vector analysis, residual difference classification).
+
+    Args:
+        cover_frames: List of original video frames (BGR/RGB uint8 arrays).
+        stego_frames: List of stego video frames with identical count and dimensions.
+
+    Returns:
+        Dictionary containing:
+        - 'average_mse': Mean squared error averaged across all frames.
+        - 'average_psnr': Peak Signal-to-Noise Ratio in dB across all frames.
+        - 'psnr_display': Formatted display string ('XX.XX dB' or 'Infinity (Identical)').
+        - 'total_frames': Total number of frames in the video.
+        - 'modified_frames': Number of frames that were altered during embedding.
+    """
+    validate_video_frame_pairs(cover_frames, stego_frames)
+
+    frame_mses = []
+    modified_count = 0
+
+    for c_frame, s_frame in zip(cover_frames, stego_frames):
+        c_f = c_frame.astype(np.float64)
+        s_f = s_frame.astype(np.float64)
+        f_mse = float(np.mean((c_f - s_f) ** 2))
+        frame_mses.append(f_mse)
+        if f_mse > 0.0:
+            modified_count += 1
+
+    total_frames = len(cover_frames)
+    avg_mse = float(np.mean(frame_mses))
+
+    if avg_mse == 0.0:
+        avg_psnr = float("inf")
+        psnr_display = "Infinity (Identical)"
+    else:
+        avg_psnr = 10.0 * math.log10((255.0 ** 2) / avg_mse)
+        psnr_display = f"{round(avg_psnr, 2)} dB"
+
+    return {
+        "average_mse": round(avg_mse, 8),
+        "average_psnr": avg_psnr if math.isinf(avg_psnr) else round(avg_psnr, 4),
+        "psnr_display": psnr_display,
+        "total_frames": total_frames,
+        "modified_frames": modified_count
+    }

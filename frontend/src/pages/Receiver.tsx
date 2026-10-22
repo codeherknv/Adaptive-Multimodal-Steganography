@@ -4,6 +4,7 @@ import {
   Upload, 
   Image as ImageIcon,
   Music,
+  Video as VideoIcon,
   CheckCircle2, 
   AlertTriangle, 
   Copy, 
@@ -15,17 +16,19 @@ import {
 import { 
   extractFromImage, 
   extractFromAudio,
+  extractFromVideo,
   decryptMessage 
 } from '../api/client';
 import { 
   ImageExtractResponse, 
   AudioExtractResponse,
+  VideoExtractResponse,
   DecryptResponse 
 } from '../api/types';
 
 export const Receiver: React.FC = () => {
   // Carrier mode
-  const [carrierType, setCarrierType] = useState<'image' | 'audio'>('image');
+  const [carrierType, setCarrierType] = useState<'image' | 'audio' | 'video'>('image');
 
   // Stego file states
   const [stegoFile, setStegoFile] = useState<File | null>(null);
@@ -33,7 +36,7 @@ export const Receiver: React.FC = () => {
 
   // Extraction states
   const [extracting, setExtracting] = useState<boolean>(false);
-  const [extractResult, setExtractResult] = useState<ImageExtractResponse | AudioExtractResponse | null>(null);
+  const [extractResult, setExtractResult] = useState<ImageExtractResponse | AudioExtractResponse | VideoExtractResponse | null>(null);
 
   // Decryption states
   const [keyInput, setKeyInput] = useState<string>('');
@@ -65,20 +68,28 @@ export const Receiver: React.FC = () => {
       const reader = new FileReader();
       reader.onload = () => setStegoPreview(reader.result as string);
       reader.readAsDataURL(file);
-    } else {
+    } else if (carrierType === 'audio') {
       if (!file.name.toLowerCase().endsWith('.wav') && !file.type.includes('wav')) {
         setError('Please select a WAV audio carrier file.');
         return;
       }
       setStegoFile(file);
       setStegoPreview(URL.createObjectURL(file));
+    } else {
+      const lower = file.name.toLowerCase();
+      if (!['.avi', '.mkv', '.mp4'].some(ext => lower.endsWith(ext))) {
+        setError('Please select a valid video carrier file (.avi, .mkv, or .mp4).');
+        return;
+      }
+      setStegoFile(file);
+      setStegoPreview(file.name);
     }
   };
 
   // Step 1: Extract envelope from carrier
   const handleExtract = async () => {
     if (!stegoFile) {
-      setError(`Please select a stego ${carrierType === 'image' ? 'PNG image' : 'WAV audio'} file.`);
+      setError(`Please select a stego ${carrierType === 'image' ? 'PNG image' : carrierType === 'audio' ? 'WAV audio' : 'video'} file.`);
       return;
     }
 
@@ -91,8 +102,11 @@ export const Receiver: React.FC = () => {
       if (carrierType === 'image') {
         const result = await extractFromImage(stegoFile, 'base64');
         setExtractResult(result);
-      } else {
+      } else if (carrierType === 'audio') {
         const result = await extractFromAudio(stegoFile, 'base64');
+        setExtractResult(result);
+      } else {
+        const result = await extractFromVideo(stegoFile, 'base64');
         setExtractResult(result);
       }
     } catch (err: any) {
@@ -158,14 +172,14 @@ export const Receiver: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-mono text-xs text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                Phase 4 Live
+                Phase 5 Live
               </span>
               <h1 className="text-base font-bold text-canvas-textPrimary tracking-tight">
                 Receiver: Multimodal Extraction & Authenticated Decryption
               </h1>
             </div>
             <p className="text-xs text-canvas-textMuted mt-1">
-              Upload a stego PNG image or WAV audio carrier, extract the embedded binary envelope, and authenticate with AES-256-GCM.
+              Upload a stego PNG image, WAV audio, or video carrier, extract the embedded binary envelope, and authenticate with AES-256-GCM.
             </p>
           </div>
 
@@ -209,6 +223,25 @@ export const Receiver: React.FC = () => {
               <Music className="w-3.5 h-3.5 text-emerald-400" />
               <span>WAV Audio</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCarrierType('video');
+                setStegoFile(null);
+                setStegoPreview(null);
+                setExtractResult(null);
+                setDecryptResult(null);
+                setError(null);
+              }}
+              className={`px-3 py-1 rounded transition-colors flex items-center space-x-1.5 ${
+                carrierType === 'video'
+                  ? 'bg-canvas-base text-canvas-textPrimary border border-canvas-border shadow-sm'
+                  : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+              }`}
+            >
+              <VideoIcon className="w-3.5 h-3.5 text-purple-400" />
+              <span>Video</span>
+            </button>
           </div>
         </div>
 
@@ -227,10 +260,12 @@ export const Receiver: React.FC = () => {
           <div className="flex items-center space-x-2 text-xs font-mono text-canvas-textPrimary font-semibold pb-2 border-b border-canvas-border">
             {carrierType === 'image' ? (
               <ImageIcon className="w-3.5 h-3.5 text-accent" />
-            ) : (
+            ) : carrierType === 'audio' ? (
               <Music className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <VideoIcon className="w-3.5 h-3.5 text-purple-400" />
             )}
-            <span>1. Upload Stego {carrierType === 'image' ? 'PNG Image' : 'PCM WAV Audio'}</span>
+            <span>1. Upload Stego {carrierType === 'image' ? 'PNG Image' : carrierType === 'audio' ? 'PCM WAV Audio' : 'Video'}</span>
           </div>
 
           <div>
@@ -240,14 +275,14 @@ export const Receiver: React.FC = () => {
             <label className="border border-dashed border-canvas-border hover:border-zinc-600 bg-canvas-base rounded-md p-4 flex flex-col items-center justify-center cursor-pointer transition-colors">
               <Upload className="w-6 h-6 text-canvas-textMuted mb-1" />
               <span className="text-xs font-mono text-canvas-textSecondary">
-                {stegoFile ? stegoFile.name : `Click or drop a stego ${carrierType === 'image' ? 'PNG' : 'WAV'} here`}
+                {stegoFile ? stegoFile.name : `Click or drop a stego ${carrierType === 'image' ? 'PNG' : carrierType === 'audio' ? 'WAV' : 'video'} here`}
               </span>
               <span className="text-[10px] font-mono text-zinc-500 mt-0.5">
-                {carrierType === 'image' ? 'PNG carrier with PSTG header' : 'WAV audio carrier with WSTG header'}
+                {carrierType === 'image' ? 'PNG carrier with PSTG header' : carrierType === 'audio' ? 'WAV audio carrier with WSTG header' : 'Lossless AVI/MKV carrier with VSTG header'}
               </span>
               <input
                 type="file"
-                accept={carrierType === 'image' ? 'image/png' : '.wav,audio/wav,audio/x-wav'}
+                accept={carrierType === 'image' ? 'image/png' : carrierType === 'audio' ? '.wav,audio/wav,audio/x-wav' : '.avi,.mkv,.mp4,video/*'}
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -275,7 +310,7 @@ export const Receiver: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : carrierType === 'audio' ? (
                 <div className="space-y-2">
                   <audio controls src={stegoPreview} className="w-full h-8" />
                   <div className="flex justify-between">
@@ -284,6 +319,21 @@ export const Receiver: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-canvas-textMuted">Size:</span>
+                    <span className="text-canvas-textPrimary">{stegoFile ? (stegoFile.size / 1024).toFixed(1) : 0} KB</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2 text-purple-400 font-semibold pb-1 border-b border-canvas-border">
+                    <VideoIcon className="w-4 h-4" />
+                    <span className="truncate">{stegoFile?.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-canvas-textMuted">Carrier Type:</span>
+                    <span className="text-canvas-textPrimary">Lossless Video (.avi / .mkv)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-canvas-textMuted">File Size:</span>
                     <span className="text-canvas-textPrimary">{stegoFile ? (stegoFile.size / 1024).toFixed(1) : 0} KB</span>
                   </div>
                 </div>
@@ -312,7 +362,7 @@ export const Receiver: React.FC = () => {
               <div className="flex items-center justify-between pb-1 border-b border-canvas-border">
                 <span className="text-emerald-400 font-semibold flex items-center space-x-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Envelope Extracted ({carrierType === 'image' ? 'PSTG' : 'WSTG'} Valid)</span>
+                  <span>Envelope Extracted ({carrierType === 'image' ? 'PSTG' : carrierType === 'audio' ? 'WSTG' : 'VSTG'} Valid)</span>
                 </span>
                 <span className="text-zinc-500 text-[10px]">CRC32 Verified</span>
               </div>

@@ -47,14 +47,14 @@ def test_health_endpoint(client):
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_4(client):
+def test_system_status_endpoint_phase_5(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 4
+    assert data["current_phase"] == 5
     assert "modules" in data
     
-    # Phase 1, 2, 3, and 4 modules are implemented
+    # Phase 1, 2, 3, 4, and 5 modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
     assert data["modules"]["payload_codec"]["status"] == "implemented"
@@ -62,9 +62,10 @@ def test_system_status_endpoint_phase_4(client):
     assert len(data["modules"]["image_stego"]["capabilities"]) > 0
     assert data["modules"]["audio_stego"]["status"] == "implemented"
     assert len(data["modules"]["audio_stego"]["capabilities"]) > 0
+    assert data["modules"]["video_stego"]["status"] == "implemented"
+    assert len(data["modules"]["video_stego"]["capabilities"]) > 0
 
     # Future phases remain truthfully pending
-    assert data["modules"]["video_stego"]["status"] == "pending"
     assert data["modules"]["allocation"]["status"] == "pending"
     assert data["modules"]["steganalysis"]["status"] == "pending"
 
@@ -459,5 +460,123 @@ class TestAudioStegoAPIEndpoints:
         res = client.post(
             "/api/audio/capacity",
             files={"audio": ("bad.wav", b"NOT_A_VALID_WAV_FILE_HEADER", "audio/wav")}
+        )
+        assert res.status_code == 400
+
+
+def make_test_video_bytes(num_frames: int = 4, width: int = 40, height: int = 40, fps: float = 25.0) -> bytes:
+    """Helper to generate in-memory lossless AVI video bytes for API tests."""
+    from app.media.video_stego import save_video_to_bytes, detect_available_lossless_codec
+    codec, ext = detect_available_lossless_codec()
+    frames = [
+        np.ones((height, width, 3), dtype=np.uint8) * (80 + i * 10)
+        for i in range(num_frames)
+    ]
+    return save_video_to_bytes(frames, fps, width, height, fourcc_str=codec, ext=ext)
+
+
+class TestVideoStegoAPIEndpoints:
+    """Integration test suite for video steganography REST API endpoints."""
+
+    def test_video_capacity_endpoint(self, client):
+        vid_bytes = make_test_video_bytes(num_frames=4, width=64, height=48, fps=20.0)
+        res = client.post(
+            "/api/video/capacity",
+            files={"video": ("test_video.avi", vid_bytes, "video/x-msvideo")}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["width"] == 64
+        assert data["height"] == 48
+        assert data["channels_per_frame"] == 3
+        assert data["num_frames"] == 4
+        assert data["fps"] == 20.0
+        assert data["total_carrier_bits"] == 4 * 64 * 48 * 3
+        assert data["header_overhead_bytes"] == 14
+        assert data["max_usable_payload_bytes"] == (4 * 64 * 48 * 3 - 112) // 8
+
+    def test_video_embed_and_extract_end_to_end_pipeline(self, client):
+        original_secret = "Top Secret Video Steganography Payload 🎬"
+        enc_res = client.post("/api/crypto/encrypt", json={"plaintext": original_secret, "encoding": "base64"})
+        assert enc_res.status_code == 200
+        enc_data = enc_res.json()
+        envelope_b64 = enc_data["envelope"]
+        secret_key_b64 = enc_data["key"]
+
+        # 1. Check capacity
+        cover_vid = make_test_video_bytes(num_frames=5, width=64, height=64)
+        cap_res = client.post(
+            "/api/video/capacity",
+            files={"video": ("cover.avi", cover_vid, "video/x-msvideo")}
+        )
+        assert cap_res.status_code == 200
+        assert cap_res.json()["max_usable_payload_bytes"] > enc_data["envelope_bytes_length"]
+
+        # 2. Embed envelope into video
+        embed_res = client.post(
+            "/api/video/embed",
+            files={"video": ("cover.avi", cover_vid, "video/x-msvideo")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 200
+        embed_data = embed_res.json()
+        assert "data:video/avi;base64," in embed_data["stego_video_data_url"]
+        assert "data:image/png;base64," in embed_data["preview_frame_data_url"]
+        assert embed_data["metrics"]["average_psnr"] > 50.0  # High visual fidelity
+        assert embed_data["embedded_bytes"] == enc_data["envelope_bytes_length"]
+
+        # 3. Decode data URL to video bytes
+        b64_content = embed_data["stego_video_data_url"].split(",", 1)[1]
+        stego_vid_bytes = base64.b64decode(b64_content)
+
+        # 4. Extract envelope from stego video
+        extract_res = client.post(
+            "/api/video/extract",
+            files={"video": ("stego.avi", stego_vid_bytes, "video/x-msvideo")},
+            data={"encoding": "base64"}
+        )
+        assert extract_res.status_code == 200
+        extract_data = extract_res.json()
+        assert extract_data["envelope"] == envelope_b64
+        assert extract_data["status"] == "verified"
+
+        # 5. Decrypt envelope
+        dec_res = client.post(
+            "/api/crypto/decrypt",
+            json={"envelope": extract_data["envelope"], "key": secret_key_b64, "encoding": "base64"}
+        )
+        assert dec_res.status_code == 200
+        assert dec_res.json()["plaintext"] == original_secret
+        assert dec_res.json()["authenticated"] is True
+
+    def test_video_embed_insufficient_capacity_returns_400(self, client):
+        # 1 tiny frame of 8x8 = 8 * 8 * 3 = 192 bits = 24 bytes
+        # Max usable = (192 - 112) // 8 = 10 bytes
+        short_vid = make_test_video_bytes(num_frames=1, width=8, height=8)
+        enc_res = client.post("/api/crypto/encrypt", json={"plaintext": "A" * 50})
+        envelope_b64 = enc_res.json()["envelope"]
+
+        embed_res = client.post(
+            "/api/video/embed",
+            files={"video": ("short.avi", short_vid, "video/x-msvideo")},
+            data={"envelope": envelope_b64, "encoding": "base64"}
+        )
+        assert embed_res.status_code == 400
+        assert "exceeds video usable capacity" in embed_res.json()["detail"]
+
+    def test_video_extract_non_stego_video_returns_400(self, client):
+        clean_vid = make_test_video_bytes(num_frames=3, width=32, height=32)
+        res = client.post(
+            "/api/video/extract",
+            files={"video": ("clean.avi", clean_vid, "video/x-msvideo")},
+            data={"encoding": "base64"}
+        )
+        assert res.status_code == 400
+        assert "Extraction failed" in res.json()["detail"]
+
+    def test_video_invalid_file_returns_400(self, client):
+        res = client.post(
+            "/api/video/capacity",
+            files={"video": ("bad.avi", b"NOT_A_VALID_VIDEO_CONTAINER_OR_CODEC", "video/x-msvideo")}
         )
         assert res.status_code == 400

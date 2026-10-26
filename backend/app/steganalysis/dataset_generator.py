@@ -475,12 +475,12 @@ def generate_multimodal_allocation_comparison_dataset(
             "fixed_distortion": {
                 "image_psnr": fixed_res.image_metrics.get("psnr", 0.0),
                 "audio_snr": fixed_res.audio_metrics.get("snr", 0.0),
-                "video_psnr": fixed_res.video_metrics.get("psnr", 0.0),
+                "video_psnr": fixed_res.video_metrics.get("average_psnr", 0.0),
             },
             "adaptive_distortion": {
                 "image_psnr": adaptive_res.image_metrics.get("psnr", 0.0),
                 "audio_snr": adaptive_res.audio_metrics.get("snr", 0.0),
-                "video_psnr": adaptive_res.video_metrics.get("psnr", 0.0),
+                "video_psnr": adaptive_res.video_metrics.get("average_psnr", 0.0),
             },
             "cover_features": {
                 "image": img_cover_feats.tolist(),

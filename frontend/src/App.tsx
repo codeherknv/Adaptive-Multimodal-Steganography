@@ -11,6 +11,7 @@ import { Sender } from './pages/Sender';
 import { Receiver } from './pages/Receiver';
 import { MultimodalTriad } from './pages/MultimodalTriad';
 import { Steganalysis } from './pages/Steganalysis';
+import { Evaluation } from './pages/Evaluation';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -106,6 +107,10 @@ export const App: React.FC = () => {
         {activeTab === 'steganalysis' && (
           <Steganalysis />
         )}
+
+        {activeTab === 'evaluation' && (
+          <Evaluation />
+        )}
       </main>
 
       {/* Minimal Academic Footer */}
@@ -117,7 +122,7 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-3 text-[11px]">
             <span>FastAPI • React 18 • Pytest</span>
             <span>•</span>
-            <span className="text-emerald-500 font-medium">Phase 7 ML Steganalysis & Detectability Verified</span>
+            <span className="text-emerald-500 font-medium">Phase 8 Comparative Evaluation & Research Validation Verified</span>
           </div>
         </div>
       </footer>

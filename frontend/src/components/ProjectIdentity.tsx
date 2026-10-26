@@ -55,7 +55,11 @@ export const ProjectIdentity: React.FC<ProjectIdentityProps> = ({ currentPhase }
             </div>
             <div className="flex justify-between items-baseline">
               <span className="text-canvas-textMuted font-mono text-[11px]">Steganalysis:</span>
-              <span className="text-zinc-500 font-mono">Staged (Phase 8)</span>
+              <span className="text-emerald-400 font-mono">Calibrated (Phase 7)</span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <span className="text-canvas-textMuted font-mono text-[11px]">Evaluation Lab:</span>
+              <span className="text-purple-300 font-mono">Active (Phase 8)</span>
             </div>
           </div>
         </div>

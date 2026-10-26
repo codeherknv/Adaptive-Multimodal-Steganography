@@ -335,6 +335,108 @@ export interface SteganalysisMetrics {
   calibration_method?: string;
 }
 
+// ---------------------------------------------------------
+// Comparative Evaluation & Research Validation (Phase 8)
+// ---------------------------------------------------------
+
+export interface MetricPairedSummary {
+  metric_name: string;
+  sample_count: number;
+  mean_fixed: number;
+  mean_adaptive: number;
+  mean_delta: number;
+  std_delta: number;
+  ci_95_lower: number | null;
+  ci_95_upper: number | null;
+  p_value: number | null;
+  is_statistically_significant: boolean;
+  interpretation: string;
+}
+
+export interface SingleTrialResult {
+  strategy_name: 'fixed' | 'adaptive';
+  success: boolean;
+  error_reason: string | null;
+  runtime_ms: number;
+  total_net_capacity_bytes: number;
+  payload_plaintext_bytes: number;
+  overall_utilization_ratio: number;
+  image_bytes_allocated: number;
+  audio_bytes_allocated: number;
+  video_bytes_allocated: number;
+  recovered_plaintext_matches: boolean;
+  image_psnr: number | null;
+  image_ssim: number | null;
+  image_mse: number | null;
+  audio_snr: number | null;
+  audio_normalized_mse: number | null;
+  video_average_psnr: number | null;
+  video_average_mse: number | null;
+  image_stego_prob: number | null;
+  image_predicted_class: string | null;
+  audio_stego_prob: number | null;
+  audio_predicted_class: string | null;
+  video_stego_prob: number | null;
+  video_predicted_class: string | null;
+}
+
+export interface PairedTrialResult {
+  trial_id: string;
+  source_id: string;
+  provenance: 'synthetic_procedural' | 'user_provided_real';
+  target_payload_bracket: 'low' | 'medium' | 'high';
+  target_payload_fraction: number;
+  fixed_result: SingleTrialResult;
+  adaptive_result: SingleTrialResult;
+  delta_image_psnr: number | null;
+  delta_audio_snr: number | null;
+  delta_video_psnr: number | null;
+  delta_image_stego_prob: number | null;
+  delta_audio_stego_prob: number | null;
+  delta_video_stego_prob: number | null;
+}
+
+export interface ComparativeExperimentSummary {
+  total_paired_trials: number;
+  total_sources_evaluated: number;
+  provenance_breakdown: Record<string, number>;
+  fixed_recovery_rate: number;
+  adaptive_recovery_rate: number;
+  all_authenticated_matches: boolean;
+  fixed_mean_runtime_ms: number;
+  adaptive_mean_runtime_ms: number;
+  mean_runtime_overhead_ms: number;
+  metrics_summary: Record<string, MetricPairedSummary>;
+  bracket_summaries: Record<string, {
+    trial_count: number;
+    mean_fixed_image_psnr: number;
+    mean_adaptive_image_psnr: number;
+    mean_fixed_audio_snr: number;
+    mean_adaptive_audio_snr: number;
+    mean_fixed_video_psnr: number;
+    mean_adaptive_video_psnr: number;
+  }>;
+  scientific_verdict: string;
+  key_findings: string[];
+  limitations: string[];
+}
+
+export interface ComparativeEvaluationResponse {
+  metadata: {
+    experiment_timestamp: string;
+    total_paired_trials: number;
+    smoke_test: boolean;
+  };
+  summary: ComparativeExperimentSummary;
+  trials: PairedTrialResult[];
+}
+
+export interface ComparativeEvaluationRunRequest {
+  num_sources: number;
+  use_real_media: boolean;
+}
+
+
 export interface SteganalysisDatasetSummary {
   modality: 'image' | 'audio' | 'video';
   total_samples: number;
@@ -375,5 +477,107 @@ export interface SteganalysisClassifyResponse {
   is_calibrated?: boolean;
   calibration_method?: string;
 }
+
+// ---------------------------------------------------------
+// Comparative Evaluation & Research Validation (Phase 8)
+// ---------------------------------------------------------
+
+export interface MetricPairedSummary {
+  metric_name: string;
+  sample_count: number;
+  mean_fixed: number;
+  mean_adaptive: number;
+  mean_delta: number;
+  std_delta: number;
+  ci_95_lower: number | null;
+  ci_95_upper: number | null;
+  p_value: number | null;
+  is_statistically_significant: boolean;
+  interpretation: string;
+}
+
+export interface SingleTrialResult {
+  strategy_name: 'fixed' | 'adaptive';
+  success: boolean;
+  error_reason: string | null;
+  runtime_ms: number;
+  total_net_capacity_bytes: number;
+  payload_plaintext_bytes: number;
+  overall_utilization_ratio: number;
+  image_bytes_allocated: number;
+  audio_bytes_allocated: number;
+  video_bytes_allocated: number;
+  recovered_plaintext_matches: boolean;
+  image_psnr: number | null;
+  image_ssim: number | null;
+  image_mse: number | null;
+  audio_snr: number | null;
+  audio_normalized_mse: number | null;
+  video_average_psnr: number | null;
+  video_average_mse: number | null;
+  image_stego_prob: number | null;
+  image_predicted_class: string | null;
+  audio_stego_prob: number | null;
+  audio_predicted_class: string | null;
+  video_stego_prob: number | null;
+  video_predicted_class: string | null;
+}
+
+export interface PairedTrialResult {
+  trial_id: string;
+  source_id: string;
+  provenance: 'synthetic_procedural' | 'user_provided_real';
+  target_payload_bracket: 'low' | 'medium' | 'high';
+  target_payload_fraction: number;
+  fixed_result: SingleTrialResult;
+  adaptive_result: SingleTrialResult;
+  delta_image_psnr: number | null;
+  delta_audio_snr: number | null;
+  delta_video_psnr: number | null;
+  delta_image_stego_prob: number | null;
+  delta_audio_stego_prob: number | null;
+  delta_video_stego_prob: number | null;
+}
+
+export interface ComparativeExperimentSummary {
+  total_paired_trials: number;
+  total_sources_evaluated: number;
+  provenance_breakdown: Record<string, number>;
+  fixed_recovery_rate: number;
+  adaptive_recovery_rate: number;
+  all_authenticated_matches: boolean;
+  fixed_mean_runtime_ms: number;
+  adaptive_mean_runtime_ms: number;
+  mean_runtime_overhead_ms: number;
+  metrics_summary: Record<string, MetricPairedSummary>;
+  bracket_summaries: Record<string, {
+    trial_count: number;
+    mean_fixed_image_psnr: number;
+    mean_adaptive_image_psnr: number;
+    mean_fixed_audio_snr: number;
+    mean_adaptive_audio_snr: number;
+    mean_fixed_video_psnr: number;
+    mean_adaptive_video_psnr: number;
+  }>;
+  scientific_verdict: string;
+  key_findings: string[];
+  limitations: string[];
+}
+
+export interface ComparativeEvaluationResponse {
+  metadata: {
+    experiment_timestamp: string;
+    total_paired_trials: number;
+    smoke_test: boolean;
+  };
+  summary: ComparativeExperimentSummary;
+  trials: PairedTrialResult[];
+}
+
+export interface ComparativeEvaluationRunRequest {
+  num_sources: number;
+  use_real_media: boolean;
+}
+
 
 

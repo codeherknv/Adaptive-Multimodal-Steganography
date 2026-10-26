@@ -1,6 +1,7 @@
 """FastAPI route definitions for health, status, crypto, and image steganography."""
 
 import base64
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -121,6 +122,8 @@ from app.schemas import (
     SteganalysisTrainRequest,
     SteganalysisTrainResponse,
     SteganalysisClassifyResponse,
+    ComparativeEvaluationRunRequest,
+    ComparativeEvaluationResponse,
 )
 
 router = APIRouter()
@@ -260,16 +263,26 @@ async def get_system_status() -> SystemStatusResponse:
         "evaluation_lab": ModuleStatus(
             name="Evaluation & Benchmarking Laboratory",
             phase=8,
-            status="pending",
-            description="Systematic measurement of PSNR, SNR, BER, recovery reliability, and CSV export.",
-            capabilities=[]
+            status="implemented",
+            description="Systematic paired measurement of PSNR, SSIM, SNR, video fidelity, steganalysis detectability, and statistical confidence intervals.",
+            capabilities=[
+                "Paired Comparative Trials (Fixed vs. Adaptive)",
+                "Identical Carrier & Payload Fairness Guarantee",
+                "Multimodal Quality Metrics (PSNR, SSIM, SNR, Video Average PSNR)",
+                "Phase 7 Calibrated Steganalysis Detectability Profiling",
+                "95% Student's t-Distribution Confidence Intervals",
+                "Paired Hypothesis Testing (p-values)",
+                "Provenance Separation (Synthetic vs. User Real Media)",
+                "Explicit Non-Silent Failure Recording",
+                "Automated JSON Results & Publication-Ready Plot Export"
+            ]
         )
     }
 
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=7,
+        current_phase=8,
         modules=modules
     )
 
@@ -1395,5 +1408,108 @@ async def classify_single_media_file(
         is_calibrated=result.is_calibrated,
         calibration_method=result.calibration_method,
     )
+
+
+# ---------------------------------------------------------
+# Comparative Evaluation Endpoints (Phase 8)
+# ---------------------------------------------------------
+
+DEFAULT_EXPERIMENTS_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "outputs", "experiments", "phase8_comparative_results.json")
+)
+
+
+@router.get(
+    "/evaluation/comparative-results",
+    response_model=ComparativeEvaluationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get Latest Comparative Evaluation Results",
+    description="Returns the paired comparative benchmark results (Fixed vs Adaptive) across all evaluated sources and brackets."
+)
+async def get_comparative_evaluation_results() -> ComparativeEvaluationResponse:
+    if os.path.isfile(DEFAULT_EXPERIMENTS_PATH):
+        try:
+            with open(DEFAULT_EXPERIMENTS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return ComparativeEvaluationResponse(**data)
+        except Exception:
+            pass
+
+    # If file not present or corrupted, generate on-demand benchmark with 4 default sources
+    from app.evaluation.real_media_loader import load_synthetic_triad, load_user_real_media_triads
+    from app.evaluation.comparative_harness import run_comparative_experiment_suite
+    from app.evaluation.statistical_analyzer import analyze_comparative_results
+
+    sources = load_user_real_media_triads()
+    if not sources:
+        sources = [load_synthetic_triad(i) for i in range(4)]
+
+    results = run_comparative_experiment_suite(sources)
+    summary = analyze_comparative_results(results)
+
+    output = {
+        "metadata": {
+            "experiment_timestamp": datetime.now(timezone.utc).isoformat(),
+            "total_paired_trials": len(results),
+            "smoke_test": False,
+        },
+        "summary": summary.to_dict(),
+        "trials": [r.to_dict() for r in results],
+    }
+
+    os.makedirs(os.path.dirname(DEFAULT_EXPERIMENTS_PATH), exist_ok=True)
+    with open(DEFAULT_EXPERIMENTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+
+    return ComparativeEvaluationResponse(**output)
+
+
+@router.post(
+    "/evaluation/run",
+    response_model=ComparativeEvaluationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Run Paired Comparative Evaluation Experiment",
+    description="Executes a new paired comparative benchmark between Fixed and Adaptive strategies on demand."
+)
+async def run_comparative_evaluation(
+    req: ComparativeEvaluationRunRequest
+) -> ComparativeEvaluationResponse:
+    from app.evaluation.real_media_loader import load_synthetic_triad, load_user_real_media_triads
+    from app.evaluation.comparative_harness import run_comparative_experiment_suite
+    from app.evaluation.statistical_analyzer import analyze_comparative_results
+
+    sources = []
+    if req.use_real_media:
+        sources.extend(load_user_real_media_triads())
+
+    needed_syn = max(0, req.num_sources - len(sources))
+    for i in range(needed_syn):
+        sources.append(load_synthetic_triad(i))
+
+    try:
+        results = run_comparative_experiment_suite(sources)
+        summary = analyze_comparative_results(results)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Comparative experiment failed: {str(e)}"
+        )
+
+    output = {
+        "metadata": {
+            "experiment_timestamp": datetime.now(timezone.utc).isoformat(),
+            "total_paired_trials": len(results),
+            "smoke_test": False,
+        },
+        "summary": summary.to_dict(),
+        "trials": [r.to_dict() for r in results],
+    }
+
+    os.makedirs(os.path.dirname(DEFAULT_EXPERIMENTS_PATH), exist_ok=True)
+    with open(DEFAULT_EXPERIMENTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+
+    return ComparativeEvaluationResponse(**output)
+
 
 

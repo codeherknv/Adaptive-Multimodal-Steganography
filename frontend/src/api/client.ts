@@ -22,6 +22,8 @@ import {
   SteganalysisTrainRequest,
   SteganalysisTrainResponse,
   SteganalysisClassifyResponse,
+  ComparativeEvaluationResponse,
+  ComparativeEvaluationRunRequest,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -245,5 +247,22 @@ export const classifyMediaFile = async (
   });
   return response.data;
 };
+
+// ---------------------------------------------------------
+// Comparative Evaluation & Research Validation API (Phase 8)
+// ---------------------------------------------------------
+
+export const getComparativeEvaluationResults = async (): Promise<ComparativeEvaluationResponse> => {
+  const response = await apiClient.get<ComparativeEvaluationResponse>('/evaluation/comparative-results');
+  return response.data;
+};
+
+export const runComparativeEvaluation = async (
+  req: ComparativeEvaluationRunRequest
+): Promise<ComparativeEvaluationResponse> => {
+  const response = await apiClient.post<ComparativeEvaluationResponse>('/evaluation/run', req);
+  return response.data;
+};
+
 
 

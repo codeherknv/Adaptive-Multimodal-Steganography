@@ -554,3 +554,21 @@ class SteganalysisClassifyResponse(BaseModel):
     calibration_method: str = "none"
 
 
+# ---------------------------------------------------------
+# Comparative Evaluation Schemas (Phase 8)
+# ---------------------------------------------------------
+
+class ComparativeEvaluationRunRequest(BaseModel):
+    """Parameters for running on-demand comparative evaluation experiments."""
+    num_sources: int = Field(8, ge=2, le=30, description="Number of independent source triads to evaluate")
+    use_real_media: bool = Field(True, description="Whether to include user-provided real media from data/real_media")
+
+
+class ComparativeEvaluationResponse(BaseModel):
+    """Machine-readable consolidated results from the comparative evaluation harness."""
+    metadata: Dict[str, Any]
+    summary: Dict[str, Any]
+    trials: List[Dict[str, Any]]
+
+
+

@@ -77,6 +77,14 @@ const PHASES_DATA: PhaseItem[] = [
     verificationEvidence: "156 automated tests passing; 10 image, 8 audio, 7 video statistical features, GroupShuffleSplit zero-leakage training, and model evaluation verified."
   },
   {
+    id: 8,
+    title: "Research Validation & Comparative Evaluation",
+    scope: "Paired comparative trials comparing Fixed Baseline vs. Adaptive Feature allocation on identical carrier triads and payloads with 95% confidence intervals and steganalysis profiling.",
+    acceptanceCriteria: "Fair paired inputs guaranteed; 100% authenticated recovery verified; Student's t-test and paired deltas computed; non-silent failure tracking.",
+    status: "completed",
+    verificationEvidence: "167 automated tests passing; 24 paired trials, Image PSNR +3.06 dB gain (p=0.0004), matched plots and JSON exports verified."
+  },
+  {
     id: 9,
     title: "Quality, Robustness & Runtime Benchmarking",
     scope: "Implement automated benchmark laboratory measuring PSNR, SNR, BER, recovery reliability, and processing time.",

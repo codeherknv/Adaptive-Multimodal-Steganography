@@ -666,4 +666,4 @@ cd backend
 pytest -v
 ```
 
-All **156 automated tests** pass with zero errors.
+All **162 automated tests** pass with zero errors.

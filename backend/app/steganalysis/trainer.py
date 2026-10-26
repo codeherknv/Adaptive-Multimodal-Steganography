@@ -4,26 +4,22 @@ This module trains lightweight, explainable baseline machine learning classifier
 (Random Forest and Logistic Regression) to detect LSB steganographic embedding across
 Image, Audio, and Video media.
 
-Leakage Prevention Guarantees:
------------------------------
+Leakage Prevention & Scientific Guarantees:
+------------------------------------------
 1. Source-Grouped Partitioning:
-   Splits dataset into train and test subsets using GroupShuffleSplit based on `source_id`.
+   Splits dataset into train and test subsets using GroupShuffleSplit strictly based on `source_id`.
    A cover media source and ALL its corresponding stego variants are strictly quarantined
    to the same partition (never split across train and test).
-2. Isolated Preprocessing:
-   StandardScaler is fitted ONLY on the training split (scaler.fit(X_train)) and then
-   applied to transform test samples (scaler.transform(X_test)).
-3. Seeded Reproducibility:
-   Random states (random_state=42) are pinned across data shuffling and model estimation.
-
-Scientific & Integrity Notice:
------------------------------
-1. High accuracy or low detectability on a small procedural dataset is illustrative.
-   Real-world steganalyzers require tens of thousands of natural camera/microphone captures.
-2. An ML detector outputting 'Cover' (label 0) is an empirical statistical prediction;
-   it is NOT mathematical proof of the absence of hidden data.
-3. Media distortion metrics (PSNR, SSIM, SNR) are strictly separated from detectability
-   metrics (Accuracy, Recall, ROC-AUC). High perceptual quality does NOT imply undetectability.
+2. Isolated Preprocessing & Calibration:
+   - StandardScaler is fitted ONLY on the training split (scaler.fit(X_train)) and then
+     applied to transform test samples (scaler.transform(X_test)).
+   - Probability calibration (CalibratedClassifierCV) is fitted strictly inside the training data
+     via internal cross-validation; the held-out test set is NEVER used for fitting or tuning.
+3. Class Weighting & Balanced Evaluation:
+   Estimators use class_weight='balanced' to prevent majority class dominance.
+4. Probability Column Ordering:
+   Positive class index is dynamically resolved from estimator.classes_ to prevent
+   probability inversion.
 """
 
 from dataclasses import asdict, dataclass
@@ -32,6 +28,7 @@ import os
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import joblib
 import numpy as np
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -68,6 +65,8 @@ class EvaluationMetrics:
     by_payload_category: Dict[str, Dict[str, float]]
     by_allocation_strategy: Dict[str, Dict[str, float]]
     limitations_note: str
+    is_calibrated: bool = False
+    calibration_method: str = "none"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -86,6 +85,9 @@ class TrainedSteganalyzer:
     trained_at: str
     train_sources: List[str]
     test_sources: List[str]
+    calibrator: Optional[Any] = None
+    is_calibrated: bool = False
+    calibration_method: str = "none"
 
     def predict(self, feature_vector: np.ndarray) -> Tuple[int, float]:
         """Predict class and stego probability for a single sample's feature vector.
@@ -95,12 +97,22 @@ class TrainedSteganalyzer:
         """
         feats_2d = feature_vector.reshape(1, -1)
         feats_scaled = self.scaler.transform(feats_2d)
-        pred_label = int(self.classifier.predict(feats_scaled)[0])
 
-        if hasattr(self.classifier, "predict_proba"):
-            probs = self.classifier.predict_proba(feats_scaled)[0]
-            stego_prob = float(probs[1]) if len(probs) > 1 else float(pred_label)
+        active_model = self.calibrator if self.calibrator is not None else self.classifier
+
+        # Safely resolve positive class column index from active model classes_
+        if hasattr(active_model, "classes_"):
+            classes_list = list(active_model.classes_)
+            pos_idx = classes_list.index(1) if 1 in classes_list else -1
         else:
+            pos_idx = 1
+
+        if hasattr(active_model, "predict_proba") and pos_idx >= 0:
+            probs = active_model.predict_proba(feats_scaled)[0]
+            stego_prob = float(probs[pos_idx])
+            pred_label = int(stego_prob >= 0.5)
+        else:
+            pred_label = int(active_model.predict(feats_scaled)[0])
             stego_prob = float(pred_label)
 
         return pred_label, round(stego_prob, 4)
@@ -113,6 +125,8 @@ class TrainedSteganalyzer:
             "trained_at": self.trained_at,
             "train_sources_count": len(self.train_sources),
             "test_sources_count": len(self.test_sources),
+            "is_calibrated": self.is_calibrated,
+            "calibration_method": self.calibration_method,
             "test_metrics": self.test_metrics.to_dict(),
         }
 
@@ -122,6 +136,8 @@ def compute_metrics(
     y_pred: np.ndarray,
     y_prob: Optional[np.ndarray],
     test_samples: List[DatasetSample],
+    is_calibrated: bool = False,
+    calibration_method: str = "none",
 ) -> EvaluationMetrics:
     """Calculate comprehensive detection metrics including category and strategy breakdowns."""
     acc = float(accuracy_score(y_true, y_pred))
@@ -136,6 +152,9 @@ def compute_metrics(
         except Exception:
             roc = None
 
+    # Confusion matrix with strict label ordering: [0 = Cover, 1 = Stego]
+    # Row 0: True 0 -> [TN at (0,0), FP at (0,1)]
+    # Row 1: True 1 -> [FN at (1,0), TP at (1,1)]
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     tn, fp, fn, tp = int(cm[0, 0]), int(cm[0, 1]), int(cm[1, 0]), int(cm[1, 1])
 
@@ -144,9 +163,7 @@ def compute_metrics(
     for cat in ["low", "medium", "high"]:
         indices = [i for i, s in enumerate(test_samples) if s.label == 1 and s.payload_category == cat]
         if indices:
-            cat_true = y_true[indices]
             cat_pred = y_pred[indices]
-            # Stego detection recall on this specific payload size
             det_rate = float(np.mean(cat_pred == 1))
             by_cat[cat] = {
                 "sample_count": len(indices),
@@ -187,6 +204,8 @@ def compute_metrics(
         by_payload_category=by_cat,
         by_allocation_strategy=by_strat,
         limitations_note=limitations,
+        is_calibrated=is_calibrated,
+        calibration_method=calibration_method,
     )
 
 
@@ -239,18 +258,20 @@ def train_steganalyzer(
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # 3. Model Estimation
+    # 3. Model Estimation with class weighting
     if model_type == "random_forest":
         clf = RandomForestClassifier(
             n_estimators=100,
             max_depth=6,
             min_samples_split=2,
+            class_weight="balanced",
             random_state=random_state,
         )
     elif model_type == "logistic_regression":
         clf = LogisticRegression(
             max_iter=1000,
             C=1.0,
+            class_weight="balanced",
             random_state=random_state,
         )
     else:
@@ -258,15 +279,56 @@ def train_steganalyzer(
 
     clf.fit(X_train_scaled, y_train)
 
-    # 4. In-Sample Training Evaluation
-    y_train_pred = clf.predict(X_train_scaled)
-    y_train_prob = clf.predict_proba(X_train_scaled)[:, 1] if hasattr(clf, "predict_proba") else None
-    train_metrics = compute_metrics(y_train, y_train_pred, y_train_prob, train_samples)
+    # 4. Probability Calibration (strictly on training split using internal CV)
+    calibrator = None
+    is_calibrated = False
+    calib_method = "uncalibrated"
 
-    # 5. Out-of-Sample Held-Out Test Evaluation
-    y_test_pred = clf.predict(X_test_scaled)
-    y_test_prob = clf.predict_proba(X_test_scaled)[:, 1] if hasattr(clf, "predict_proba") else None
-    test_metrics = compute_metrics(y_test, y_test_pred, y_test_prob, test_samples)
+    counts_train = np.bincount(y_train, minlength=2)
+    if min(counts_train) >= 3:
+        try:
+            cv_folds = min(3, int(min(counts_train)))
+            calibrator = CalibratedClassifierCV(
+                estimator=clf,
+                method="sigmoid",
+                cv=cv_folds
+            )
+            calibrator.fit(X_train_scaled, y_train)
+            is_calibrated = True
+            calib_method = f"platt_sigmoid_cv{cv_folds}"
+        except Exception:
+            calibrator = None
+            is_calibrated = False
+            calib_method = "uncalibrated"
+
+    active_model = calibrator if is_calibrated else clf
+
+    # Resolve positive class index safely
+    if hasattr(active_model, "classes_"):
+        classes_list = list(active_model.classes_)
+        pos_idx = classes_list.index(1) if 1 in classes_list else 1
+    else:
+        pos_idx = 1
+
+    # 5. In-Sample Training Evaluation
+    if hasattr(active_model, "predict_proba"):
+        y_train_prob = active_model.predict_proba(X_train_scaled)[:, pos_idx]
+        y_train_pred = (y_train_prob >= 0.5).astype(int)
+    else:
+        y_train_pred = active_model.predict(X_train_scaled)
+        y_train_prob = y_train_pred.astype(float)
+
+    train_metrics = compute_metrics(y_train, y_train_pred, y_train_prob, train_samples, is_calibrated, calib_method)
+
+    # 6. Out-of-Sample Held-Out Test Evaluation
+    if hasattr(active_model, "predict_proba"):
+        y_test_prob = active_model.predict_proba(X_test_scaled)[:, pos_idx]
+        y_test_pred = (y_test_prob >= 0.5).astype(int)
+    else:
+        y_test_pred = active_model.predict(X_test_scaled)
+        y_test_prob = y_test_pred.astype(float)
+
+    test_metrics = compute_metrics(y_test, y_test_pred, y_test_prob, test_samples, is_calibrated, calib_method)
 
     trained_at = datetime.now(timezone.utc).isoformat()
     analyzer = TrainedSteganalyzer(
@@ -280,9 +342,12 @@ def train_steganalyzer(
         trained_at=trained_at,
         train_sources=train_sources,
         test_sources=test_sources,
+        calibrator=calibrator,
+        is_calibrated=is_calibrated,
+        calibration_method=calib_method,
     )
 
-    # 6. Save model to disk if directory specified or default exists
+    # 7. Save model to disk if directory specified or default exists
     target_dir = models_dir or DEFAULT_MODELS_DIR
     os.makedirs(target_dir, exist_ok=True)
     model_filename = f"stego_{dataset.modality}_{model_type}.joblib"
@@ -307,6 +372,23 @@ def load_steganalyzer(
 
     try:
         analyzer = joblib.load(model_path)
-        return analyzer if isinstance(analyzer, TrainedSteganalyzer) else None
+        if isinstance(analyzer, TrainedSteganalyzer):
+            return analyzer
+        return None
     except Exception:
         return None
+
+
+def format_metrics_summary(metrics: EvaluationMetrics) -> str:
+    """Format an EvaluationMetrics instance as an academic markdown string."""
+    calib_str = f"Yes ({metrics.calibration_method})" if metrics.is_calibrated else "No (uncalibrated)"
+    lines = [
+        f"**Accuracy:** {metrics.accuracy:.2%} | **Precision:** {metrics.precision:.4f} | "
+        f"**Recall:** {metrics.recall:.4f} | **F1:** {metrics.f1_score:.4f}",
+        f"**ROC-AUC:** {metrics.roc_auc:.4f}" if metrics.roc_auc is not None else "**ROC-AUC:** N/A",
+        f"**Calibrated:** {calib_str}",
+        f"**Confusion Matrix:** TP={metrics.true_positives}, TN={metrics.true_negatives}, "
+        f"FP={metrics.false_positives}, FN={metrics.false_negatives}",
+        f"**Samples:** {metrics.total_samples} (Cover: {metrics.cover_count}, Stego: {metrics.stego_count})",
+    ]
+    return "\n".join(lines)

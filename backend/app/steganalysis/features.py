@@ -67,6 +67,11 @@ IMAGE_FEATURE_NAMES = [
 def extract_image_features(image_input: Union[bytes, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
     """Extract 10 statistical and LSB artifact features from a candidate image.
 
+    Guarantees:
+    - Preserves RGB channel information (no float grayscale distortion on discrete LSBs).
+    - Prevents unsigned integer underflow on diff operations by casting to int32.
+    - Accurately captures Pairs of Values (PoV) asymmetry across discrete R, G, B bins.
+
     Args:
         image_input: Raw image bytes or existing NumPy uint8 RGB array.
 
@@ -86,20 +91,32 @@ def extract_image_features(image_input: Union[bytes, np.ndarray]) -> Tuple[np.nd
         raise FeatureExtractionError(f"Image is too small for statistical analysis: {w}x{h}.")
 
     rgb = img_arr[:, :, :3]
+
+    # 1. LSB 1-ratio across RGB channels where steganography embeds
+    rgb_lsb = (rgb & 1).astype(np.int32)
+    lsb_one_ratio = float(np.mean(rgb_lsb))
+
+    # 2. Pairs of Values (PoV) asymmetry across discrete 8-bit RGB color channels
+    # In spatial LSB stego, (2k <-> 2k+1) histogram bins equalize within each color channel.
+    pov_channel_scores = []
+    for c_idx in range(3):
+        ch = rgb[:, :, c_idx]
+        hist, _ = np.histogram(ch, bins=256, range=(0, 256))
+        even_bins = hist[0::2].astype(np.float64)
+        odd_bins = hist[1::2].astype(np.float64)
+        denom = even_bins + odd_bins
+        mask = denom > 0
+        if np.any(mask):
+            ch_pov = float(np.mean(np.abs(even_bins[mask] - odd_bins[mask]) / denom[mask]))
+        else:
+            ch_pov = 0.0
+        pov_channel_scores.append(ch_pov)
+    pov_asymmetry = float(np.mean(pov_channel_scores))
+
+    # Convert to grayscale float64 for spatial continuous gradient analysis
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
-    # 1. LSB 1-ratio across RGB channels
-    lsbs = rgb & 1
-    lsb_one_ratio = float(np.mean(lsbs))
-
-    # 2. Pairs of Values (PoV) asymmetry across grayscale histogram
-    hist, _ = np.histogram(gray, bins=256, range=(0, 256))
-    even_bins = hist[0::2].astype(np.float64)
-    odd_bins = hist[1::2].astype(np.float64)
-    denom = even_bins + odd_bins + 1e-6
-    pov_asymmetry = float(np.mean(np.abs(even_bins - odd_bins) / denom))
-
-    # 3. Horizontal and vertical first-order differences
+    # 3. Horizontal and vertical first-order spatial differences (float64, no underflow)
     diff_h = np.diff(gray, axis=1)
     diff_v = np.diff(gray, axis=0)
     horiz_diff_var = float(np.var(diff_h))
@@ -113,9 +130,10 @@ def extract_image_features(image_input: Union[bytes, np.ndarray]) -> Tuple[np.nd
     laplacian = cv2.Laplacian(gray, cv2.CV_64F)
     highpass_residual_var = float(np.var(laplacian))
 
-    # 6. LSB transition rate across adjacent horizontal pixels
-    gray_lsb = gray.astype(np.uint8) & 1
-    lsb_transitions = np.abs(np.diff(gray_lsb, axis=1))
+    # 6. LSB transition rate across adjacent horizontal pixels in RGB LSB plane
+    # Explicit int32 casting ensures transitions in BOTH directions (0->1 and 1->0) evaluate to 1,
+    # preventing unsigned uint8 underflow (0 - 1 = 255).
+    lsb_transitions = np.abs(np.diff(rgb_lsb, axis=1))
     lsb_transition_rate = float(np.mean(lsb_transitions))
 
     # 7. Basic intensity statistics
@@ -181,31 +199,32 @@ def extract_audio_features(audio_input: Union[bytes, bytearray, io.BytesIO]) -> 
         raise FeatureExtractionError(f"Audio file contains too few samples ({len(samples)}) for analysis.")
 
     # 1. LSB 1-ratio
-    raw_lsb = (samples.astype(np.int64) & 1).astype(np.float64)
-    lsb_one_ratio = float(np.mean(raw_lsb))
+    raw_lsb_int = (samples.astype(np.int64) & 1).astype(np.int32)
+    lsb_one_ratio = float(np.mean(raw_lsb_int))
 
-    # 2. Pairs of Values (PoV) asymmetry
-    # Map samples to positive indices
+    # 2. Pairs of Values (PoV) asymmetry appropriate for sample bit depth
     if samples.dtype == np.int16:
-        # Shift int16 range [-32768, 32767] to [0, 65535]
-        shifted = (samples.astype(np.int64) + 32768)
-        bins_count = 1024  # coarse binning to capture pair frequencies
-        hist, _ = np.histogram(shifted, bins=bins_count)
-    else:  # uint8: 0..255
+        # In 16-bit PCM, the LSB is the 0th bit of the low byte.
+        # Analyzing the 256 discrete bins of the lower byte provides sufficient
+        # sample density per bin pair (2k, 2k+1) to detect LSB equalization.
+        low_byte = (samples.astype(np.int64) + 32768) & 0xFF
+        hist, _ = np.histogram(low_byte, bins=256, range=(0, 256))
+    else:  # uint8: 8-bit PCM samples directly in 0..255
         hist, _ = np.histogram(samples, bins=256, range=(0, 256))
 
     even_bins = hist[0::2].astype(np.float64)
     odd_bins = hist[1::2].astype(np.float64)
-    denom = even_bins + odd_bins + 1e-6
-    pov_asymmetry = float(np.mean(np.abs(even_bins - odd_bins) / denom))
+    denom = even_bins + odd_bins
+    mask = denom > 0
+    pov_asymmetry = float(np.mean(np.abs(even_bins[mask] - odd_bins[mask]) / denom[mask])) if np.any(mask) else 0.0
 
-    # Normalize samples to [-1.0, 1.0] for signal processing
+    # Normalize samples to [-1.0, 1.0] for continuous signal processing
     if samples.dtype == np.int16:
         norm_samples = samples.astype(np.float64) / 32768.0
     else:
         norm_samples = (samples.astype(np.float64) - 128.0) / 128.0
 
-    # 3. First-order differences Δs(t) = s(t) - s(t-1)
+    # 3. First-order differences Δs(t) = s(t) - s(t-1) (float64, no underflow)
     diff1 = np.diff(norm_samples)
     first_diff_var = float(np.var(diff1))
     diff_kurtosis = float(stats.kurtosis(diff1)) if len(diff1) > 10 else 0.0
@@ -215,7 +234,8 @@ def extract_audio_features(audio_input: Union[bytes, bytearray, io.BytesIO]) -> 
     second_diff_var = float(np.var(diff2)) if len(diff2) > 0 else 0.0
 
     # 5. LSB transition rate across successive samples
-    lsb_diffs = np.abs(np.diff(raw_lsb))
+    # Explicit int32 casting ensures transitions evaluate to 1 in both directions (0->1 and 1->0)
+    lsb_diffs = np.abs(np.diff(raw_lsb_int))
     lsb_transition_rate = float(np.mean(lsb_diffs))
 
     # 6. High-band spectral energy ratio (upper half of spectrum)
@@ -299,8 +319,8 @@ def extract_video_features(
     # Convert frames to grayscale float64
     gray_frames = [cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float64) for f in sampled_frames]
 
-    # 1. LSB 1-ratio across sampled frames
-    lsb_means = [float(np.mean(f.astype(np.uint8) & 1)) for f in sampled_frames]
+    # 1. LSB 1-ratio across sampled frames (evaluated across BGR color planes)
+    lsb_means = [float(np.mean((f & 1).astype(np.float64))) for f in sampled_frames]
     lsb_one_ratio = float(np.mean(lsb_means))
 
     # 2. Inter-frame temporal difference statistics
@@ -315,9 +335,11 @@ def extract_video_features(
         if len(flat_diff) > 20:
             inter_diff_kurts.append(float(stats.kurtosis(flat_diff)))
 
-        # Inter-frame LSB flip rate at identical coordinates
-        lsb_prev = gray_frames[i - 1].astype(np.uint8) & 1
-        lsb_curr = gray_frames[i].astype(np.uint8) & 1
+        # Inter-frame LSB flip rate at identical coordinates in BGR color planes.
+        # Explicit int32 casting ensures transitions evaluate to 1 in both directions (0->1 and 1->0)
+        # without uint8 unsigned underflow.
+        lsb_prev = (sampled_frames[i - 1] & 1).astype(np.int32)
+        lsb_curr = (sampled_frames[i] & 1).astype(np.int32)
         inter_lsb_flips.append(float(np.mean(np.abs(lsb_curr - lsb_prev))))
 
     interframe_diff_var = float(np.mean(inter_diff_vars)) if inter_diff_vars else 0.0

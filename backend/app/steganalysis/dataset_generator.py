@@ -1,8 +1,9 @@
 """Steganalysis labeled dataset generation pipeline across Image, Audio, and Video.
 
-This module generates reproducible, leak-free labeled datasets for supervised steganalysis:
-- Label 0: Cover media (no hidden payload).
-- Label 1: Stego media (containing AES-256-GCM encrypted ASTG payload).
+This module generates reproducible, leak-free, strictly 1:1 class-balanced labeled datasets
+for supervised steganalysis:
+- Label 0: Original cover media (no hidden payload).
+- Label 1: Stego media containing a fully authenticated AES-256-GCM encrypted envelope.
 
 Leakage Prevention Architecture:
 -------------------------------
@@ -11,15 +12,16 @@ All stego variants derived from that specific cover retain the exact same `sourc
 Downstream training uses `GroupShuffleSplit` on `source_id` so that an original cover
 and its corresponding stego derivatives NEVER span across train, validation, and test splits.
 
-Security & Confidentiality:
---------------------------
-Neither the plaintext message, the encryption key, nor the initialization vector
-is ever stored in dataset features or metadata records.
+Cryptographic & Embedding Validity:
+-----------------------------------
+- Envelopes are NEVER truncated or sliced. Every stego sample contains a complete,
+  valid AES-256-GCM envelope with full 14-byte header and 16-byte GHASH tag.
+- Round-trip extraction and authenticated decryption are verified for every generated sample.
+- Zero secret leakage: neither plaintext, symmetric keys, nor nonces are stored in features or records.
 """
 
 from dataclasses import asdict, dataclass
 import io
-import math
 import os
 import uuid
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -27,10 +29,18 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.core.crypto_utils import generate_key, encrypt
-from app.media.image_stego import embed_in_image, get_image_capacity
-from app.media.audio_stego import embed_in_audio, get_audio_capacity, save_wav_audio
-from app.media.video_stego import embed_in_video, get_video_capacity, save_video_to_bytes, detect_available_lossless_codec
+from app.core.crypto_utils import generate_key, encrypt, decrypt
+from app.media.image_stego import embed_in_image, extract_from_image, get_image_capacity
+from app.media.audio_stego import embed_in_audio, extract_from_audio, get_audio_capacity, save_wav_audio
+from app.media.video_stego import (
+    embed_in_video,
+    extract_from_video,
+    get_video_capacity,
+    save_video_to_bytes,
+    detect_available_lossless_codec
+)
+from app.allocation.profiler import profile_multimodal_triad
+from app.allocation.allocator import get_allocation_strategy
 from app.steganalysis.features import (
     extract_image_features,
     extract_audio_features,
@@ -51,7 +61,7 @@ class DatasetSample:
     label_name: str                  # 'cover' or 'stego'
     payload_bytes: int
     payload_fraction: float          # Embedded bytes / usable capacity
-    payload_category: str            # 'none', 'low' (5-15%), 'medium' (20-35%), 'high' (40-60%)
+    payload_category: str            # 'none', 'low' (5-20%), 'medium' (21-40%), 'high' (>40%)
     allocation_strategy: str         # 'none', 'fixed', or 'adaptive'
     features: List[float]            # Extracted numerical feature vector
 
@@ -94,13 +104,13 @@ def generate_procedural_image(
     width: int = 64,
     height: int = 64
 ) -> bytes:
-    """Generate a reproducible, procedurally varied cover PNG image."""
+    """Generate a reproducible, procedurally varied cover PNG image across diverse styles."""
     rng = np.random.RandomState(source_index * 100 + 42)
-    style = source_index % 5
+    style = source_index % 6
 
     if style == 0:  # Gaussian noise texture
         arr = rng.randint(40, 215, (height, width, 3), dtype=np.uint8)
-    elif style == 1:  # Smooth gradient
+    elif style == 1:  # Smooth gradient across diagonals
         x = np.linspace(30, 220, width, dtype=np.uint8)
         arr = np.tile(x, (height, 1))
         arr = np.stack([arr, arr.T, np.flipud(arr)], axis=-1)
@@ -117,6 +127,10 @@ def generate_procedural_image(
             for j in range(0, width, block):
                 val = rng.randint(60, 200, size=3, dtype=np.uint8)
                 arr[i:i+block, j:j+block] = val
+    elif style == 4:  # Naturalistic Perlin-like smoothed noise
+        base = rng.normal(128, 28, (height, width)).clip(10, 245).astype(np.uint8)
+        smoothed = cv2.GaussianBlur(base, (5, 5), 1.5)
+        arr = np.stack([smoothed, np.roll(smoothed, 3, axis=0), np.roll(smoothed, 3, axis=1)], axis=-1)
     else:  # High-frequency textured pattern
         base = rng.normal(128, 30, (height, width)).clip(0, 255).astype(np.uint8)
         arr = np.stack([base, np.roll(base, 2, axis=0), np.roll(base, 2, axis=1)], axis=-1)
@@ -136,24 +150,27 @@ def generate_procedural_audio(
     rng = np.random.RandomState(source_index * 100 + 77)
     total_samples = int(duration_sec * sample_rate)
     t = np.linspace(0, duration_sec, total_samples, endpoint=False)
-    style = source_index % 4
+    style = source_index % 5
 
-    if style == 0:  # Harmonic sinusoidal combination (e.g. musical chord)
+    if style == 0:  # Harmonic musical chord
         f0 = 220.0 + (source_index * 35.0)
         sig = 0.5 * np.sin(2 * np.pi * f0 * t) + 0.3 * np.sin(2 * np.pi * 2 * f0 * t) + 0.2 * np.sin(2 * np.pi * 3 * f0 * t)
-    elif style == 1:  # Frequency modulated chirp
+    elif style == 1:  # Frequency modulated chirp sweep
         f_start = 200.0 + (source_index * 20.0)
         f_end = 800.0 + (source_index * 40.0)
         phase = 2 * np.pi * (f_start * t + 0.5 * (f_end - f_start) * (t ** 2) / duration_sec)
         sig = np.sin(phase) * 0.8
-    elif style == 2:  # Bandpass filtered noise
+    elif style == 2:  # Bandpass filtered smooth noise
         noise = rng.normal(0, 0.4, total_samples)
-        # Simple moving average smoothing
-        sig = np.convolve(noise, np.ones(5)/5.0, mode='same')
-    else:  # Percussive decaying envelope
+        sig = np.convolve(noise, np.ones(7)/7.0, mode='same')
+    elif style == 3:  # Percussive decaying tone
         f_tone = 150.0 + (source_index * 50.0)
-        decay = np.exp(-5.0 * t)
+        decay = np.exp(-6.0 * t)
         sig = np.sin(2 * np.pi * f_tone * t) * decay * 0.9
+    else:  # Multi-tone superposition with amplitude modulation
+        f1, f2 = 300.0 + source_index * 15, 600.0 + source_index * 25
+        am = 0.5 * (1.0 + np.sin(2 * np.pi * 5.0 * t))
+        sig = am * (0.6 * np.sin(2 * np.pi * f1 * t) + 0.4 * np.cos(2 * np.pi * f2 * t))
 
     int_samples = (np.clip(sig, -0.99, 0.99) * 32000).astype(np.int16)
     params = {
@@ -174,7 +191,7 @@ def generate_procedural_video(
     """Generate a reproducible, procedurally varied cover lossless AVI video."""
     codec_str, ext = detect_available_lossless_codec()
     rng = np.random.RandomState(source_index * 100 + 13)
-    style = source_index % 3
+    style = source_index % 4
 
     frames = []
     for f_idx in range(num_frames):
@@ -187,16 +204,19 @@ def generate_procedural_video(
             center = (width // 2, height // 2)
             radius = int((f_idx * 2 + 4) % (min(width, height) // 2))
             cv2.circle(frame, center, radius, (50, 200, 220), -1)
+        elif style == 2:  # Moving horizontal color bar
+            y_bar = int((f_idx * 4) % (height - 10))
+            frame[y_bar:y_bar+10, :] = [40, 200, 120]
         else:  # Modulating textured noise
             base = rng.randint(50, 190, (height, width, 3), dtype=np.uint8)
             frame = cv2.addWeighted(frame, 0.3, base, 0.7, 0)
         frames.append(frame)
 
-    return save_video_to_bytes(frames, fps, width, height, codec_str, ext)
+    return save_video_to_bytes(frames, fps, width, height, fourcc_str=codec_str, ext=ext)
 
 
 # =========================================================================
-# Labeled Steganalysis Dataset Generation Engine
+# Labeled Steganalysis Dataset Generation Engine (1:1 Class Balanced)
 # =========================================================================
 
 def generate_modality_dataset(
@@ -205,18 +225,34 @@ def generate_modality_dataset(
     payload_fractions: Optional[List[float]] = None,
     allocation_strategies: Optional[List[str]] = None,
 ) -> SteganalysisDataset:
-    """Generate a balanced, labeled steganalysis dataset for a specific modality.
+    """Generate a strictly 1:1 balanced, leak-free labeled steganalysis dataset.
+
+    Design Principles:
+    ------------------
+    1. Exact 1:1 Class Balance:
+       For every independent cover media source (Label 0), exactly ONE matched stego
+       instance (Label 1) is generated from that same carrier.
+       Total samples = 2 * num_sources (50% Cover, 50% Stego).
+    2. Valid Cryptographic Envelopes:
+       Calculates required plaintext size so that encrypt(plaintext, key) produces a
+       100% valid, untruncated AES-256-GCM envelope with intact 16-byte authentication tag.
+    3. Verification & Authenticity:
+       Every stego carrier is immediately extracted and decrypted; samples that fail
+       authentication or capacity limits are safely discarded.
+    4. Zero Leakage:
+       Source ID (e.g. 'image_src_001') is shared by both the cover and its matched stego,
+       preventing cross-split leakage when using GroupShuffleSplit.
 
     Args:
         modality: 'image', 'audio', or 'video'.
-        num_sources: Number of independent cover media sources to synthesize.
-        payload_fractions: List of capacity utilization ratios to evaluate (e.g. [0.10, 0.30, 0.50]).
-        allocation_strategies: List of strategies to tag ('fixed', 'adaptive').
+        num_sources: Number of independent cover sources to synthesize.
+        payload_fractions: Target capacity utilization ratios (default: [0.15, 0.35, 0.55]).
+        allocation_strategies: Allocation strategy tags to alternate ('fixed', 'adaptive').
 
     Returns:
-        SteganalysisDataset containing labeled samples, features, and source IDs.
+        SteganalysisDataset with exactly matched cover/stego pairs.
     """
-    fractions = payload_fractions or [0.10, 0.30, 0.50]
+    fractions = payload_fractions or [0.15, 0.35, 0.55]
     strategies = allocation_strategies or ["fixed", "adaptive"]
 
     samples: List[DatasetSample] = []
@@ -239,17 +275,66 @@ def generate_modality_dataset(
             max_usable = cap_info["max_usable_payload_bytes"]
             cover_feats, _ = extract_image_features(cover_bytes)
         elif modality == "audio":
-            cover_bytes = generate_procedural_audio(src_idx, duration_sec=0.4, sample_rate=16000)
+            cover_bytes = generate_procedural_audio(src_idx, duration_sec=0.5, sample_rate=16000)
             cap_info = get_audio_capacity(cover_bytes)
             max_usable = int(cap_info["max_usable_payload_bytes"])
             cover_feats, _ = extract_audio_features(cover_bytes)
         else:
-            cover_bytes = generate_procedural_video(src_idx, num_frames=8, width=48, height=48)
+            cover_bytes = generate_procedural_video(src_idx, num_frames=10, width=48, height=48)
             cap_info = get_video_capacity(cover_bytes)
             max_usable = int(cap_info["max_usable_payload_bytes"])
             cover_feats, _ = extract_video_features(cover_bytes)
 
-        # 2. Add Label 0 (Cover) Sample
+        if max_usable < 35:
+            continue  # Insufficient capacity for minimal 31-byte envelope
+
+        # 2. Select target payload fraction and strategy for this source (balanced round-robin)
+        frac = fractions[src_idx % len(fractions)]
+        strat = strategies[src_idx % len(strategies)]
+
+        # Determine payload category
+        if frac <= 0.20:
+            cat = "low"
+        elif frac <= 0.40:
+            cat = "medium"
+        else:
+            cat = "high"
+
+        # 3. Create a complete, valid AES-256-GCM envelope (header: 14 bytes, tag: 16 bytes = 30 bytes overhead)
+        desired_env_len = max(31, min(max_usable, int(max_usable * frac)))
+        plaintext_len = max(1, desired_env_len - 30)
+        plaintext = os.urandom(plaintext_len)
+        envelope_bytes = encrypt(plaintext, dummy_key)
+
+        if len(envelope_bytes) > max_usable:
+            continue
+
+        # 4. Embed into carrier and verify round-trip integrity
+        try:
+            if modality == "image":
+                stego_carrier, _ = embed_in_image(cover_bytes, envelope_bytes)
+                extracted_env = extract_from_image(stego_carrier)
+                stego_feats, _ = extract_image_features(stego_carrier)
+            elif modality == "audio":
+                stego_carrier, _ = embed_in_audio(cover_bytes, envelope_bytes)
+                extracted_env = extract_from_audio(stego_carrier)
+                stego_feats, _ = extract_audio_features(stego_carrier)
+            else:
+                stego_carrier, _, _ = embed_in_video(cover_bytes, envelope_bytes)
+                extracted_env = extract_from_video(stego_carrier)
+                stego_feats, _ = extract_video_features(stego_carrier)
+
+            # Cryptographic authentication verification
+            assert extracted_env == envelope_bytes, "Extracted envelope did not match embedded envelope!"
+            decrypted_plain = decrypt(extracted_env, dummy_key)
+            assert decrypted_plain == plaintext, "Decrypted plaintext did not authenticate!"
+
+        except Exception:
+            # Skip invalid carrier attempt safely
+            continue
+
+        # 5. Add Matched Pair (1 Cover + 1 Stego for this source)
+        # Cover Sample (Label 0)
         samples.append(DatasetSample(
             sample_id=str(uuid.uuid4()),
             source_id=source_id,
@@ -263,54 +348,105 @@ def generate_modality_dataset(
             features=cover_feats.tolist(),
         ))
 
-        # 3. Add Label 1 (Stego) Samples across varied payload sizes
-        for frac in fractions:
-            desired_payload_len = max(8, int(max_usable * frac))
-            if desired_payload_len > max_usable:
-                continue
-
-            # Deterministic pseudo-payload
-            plain_data = os.urandom(max(1, desired_payload_len - 30))
-            envelope_bytes = encrypt(plain_data, dummy_key)[:desired_payload_len]
-
-            # Categorize payload density
-            if frac <= 0.15:
-                cat = "low"
-            elif frac <= 0.35:
-                cat = "medium"
-            else:
-                cat = "high"
-
-            for strat in strategies:
-                try:
-                    if modality == "image":
-                        stego_arr, _ = embed_in_image(cover_bytes, envelope_bytes)
-                        stego_feats, _ = extract_image_features(stego_arr)
-                    elif modality == "audio":
-                        stego_wav, _ = embed_in_audio(cover_bytes, envelope_bytes)
-                        stego_feats, _ = extract_audio_features(stego_wav)
-                    else:
-                        stego_vid, _, _ = embed_in_video(cover_bytes, envelope_bytes)
-                        stego_feats, _ = extract_video_features(stego_vid)
-
-                    samples.append(DatasetSample(
-                        sample_id=str(uuid.uuid4()),
-                        source_id=source_id,
-                        modality=modality,
-                        label=1,
-                        label_name="stego",
-                        payload_bytes=len(envelope_bytes),
-                        payload_fraction=round(len(envelope_bytes) / max_usable, 4) if max_usable > 0 else 0.0,
-                        payload_category=cat,
-                        allocation_strategy=strat,
-                        features=stego_feats.tolist(),
-                    ))
-                except Exception:
-                    # Ignore occasional capacity boundary edge cases safely
-                    continue
+        # Stego Sample (Label 1)
+        actual_frac = round(len(envelope_bytes) / max_usable, 4) if max_usable > 0 else 0.0
+        samples.append(DatasetSample(
+            sample_id=str(uuid.uuid4()),
+            source_id=source_id,
+            modality=modality,
+            label=1,
+            label_name="stego",
+            payload_bytes=len(envelope_bytes),
+            payload_fraction=actual_frac,
+            payload_category=cat,
+            allocation_strategy=strat,
+            features=stego_feats.tolist(),
+        ))
 
     return SteganalysisDataset(
         modality=modality,
         feature_names=feature_names,
         samples=samples,
     )
+
+
+# =========================================================================
+# Genuine Multimodal Allocation Comparison Pipeline
+# =========================================================================
+
+def generate_multimodal_allocation_comparison_dataset(
+    num_triads: int = 8,
+    message_length: int = 120,
+) -> Dict[str, Any]:
+    """Execute matched-condition empirical comparison between Fixed and Adaptive allocation.
+
+    Unlike isolated single-carrier datasets, this calls the actual Phase 6 multimodal
+    allocation engine across triads of (Image, Audio, Video) covers.
+
+    Returns:
+        Dictionary containing comparative allocation slices, extracted features,
+        and carrier capacity distributions.
+    """
+    records = []
+
+    for triad_idx in range(num_triads):
+        triad_id = f"triad_src_{triad_idx:03d}"
+        img_cover = generate_procedural_image(triad_idx, width=64, height=64)
+        aud_cover = generate_procedural_audio(triad_idx, duration_sec=0.5, sample_rate=16000)
+        vid_cover = generate_procedural_video(triad_idx, num_frames=10, width=48, height=48)
+
+        # Profile all three carriers
+        triad_profile = profile_multimodal_triad(img_cover, aud_cover, vid_cover)
+
+        # Check total net capacity across the triad (accounting for 3 x 34 bytes framing overhead)
+        net_cap = sum(max(0, p.max_usable_payload_bytes - 34) for p in [triad_profile.image, triad_profile.audio, triad_profile.video])
+        if net_cap < message_length:
+            continue
+
+        try:
+            # Execute genuine Fixed Allocation
+            fixed_strat = get_allocation_strategy("fixed")
+            fixed_plan = fixed_strat.allocate(
+                payload_len=message_length,
+                triad_profile=triad_profile,
+            )
+
+            # Execute genuine Adaptive Allocation
+            adaptive_strat = get_allocation_strategy("adaptive")
+            adaptive_plan = adaptive_strat.allocate(
+                payload_len=message_length,
+                triad_profile=triad_profile,
+            )
+        except Exception:
+            continue
+
+        # Extract features from covers
+        img_cover_feats, _ = extract_image_features(img_cover)
+        aud_cover_feats, _ = extract_audio_features(aud_cover)
+        vid_cover_feats, _ = extract_video_features(vid_cover)
+
+        records.append({
+            "triad_id": triad_id,
+            "message_length": message_length,
+            "total_net_capacity": net_cap,
+            "fixed_allocation": {
+                "image_bytes": fixed_plan.allocations["image"].payload_bytes,
+                "audio_bytes": fixed_plan.allocations["audio"].payload_bytes,
+                "video_bytes": fixed_plan.allocations["video"].payload_bytes,
+            },
+            "adaptive_allocation": {
+                "image_bytes": adaptive_plan.allocations["image"].payload_bytes,
+                "audio_bytes": adaptive_plan.allocations["audio"].payload_bytes,
+                "video_bytes": adaptive_plan.allocations["video"].payload_bytes,
+            },
+            "cover_features": {
+                "image": img_cover_feats.tolist(),
+                "audio": aud_cover_feats.tolist(),
+                "video": vid_cover_feats.tolist(),
+            }
+        })
+
+    return {
+        "num_triads_evaluated": len(records),
+        "triads": records,
+    }

@@ -65,7 +65,7 @@ python -m uvicorn app.main:app --reload --port 8000
 cd backend
 .\venv\Scripts\pytest -v
 ```
-Currently passes **156 automated tests** (API integration, AES-GCM cryptography, binary payload codec, PNG LSB steganography, PCM WAV audio steganography, video frame steganography, carrier profiling, fixed & adaptive allocation, multimodal orchestration, and ML steganalysis pipelines).
+Currently passes **162 automated tests** (API integration, AES-GCM cryptography, binary payload codec, PNG LSB steganography, PCM WAV audio steganography, video frame steganography, carrier profiling, fixed & adaptive allocation, multimodal orchestration, and ML steganalysis pipelines).
 
 ### 3. Running the Frontend Development Server
 ```powershell

@@ -494,6 +494,8 @@ class SteganalysisMetricsResponse(BaseModel):
     by_payload_category: Dict[str, Dict[str, float]]
     by_allocation_strategy: Dict[str, Dict[str, float]]
     limitations_note: str
+    is_calibrated: bool = False
+    calibration_method: str = "none"
 
 
 class SteganalysisDatasetSummaryResponse(BaseModel):
@@ -548,5 +550,7 @@ class SteganalysisClassifyResponse(BaseModel):
     model_type: str
     feature_values: Dict[str, float]
     disclaimer: str
+    is_calibrated: bool = False
+    calibration_method: str = "none"
 
 

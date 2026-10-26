@@ -331,6 +331,8 @@ export interface SteganalysisMetrics {
   by_payload_category: Record<string, { sample_count: number; stego_detection_rate: number }>;
   by_allocation_strategy: Record<string, { sample_count: number; stego_detection_rate: number }>;
   limitations_note: string;
+  is_calibrated?: boolean;
+  calibration_method?: string;
 }
 
 export interface SteganalysisDatasetSummary {
@@ -370,6 +372,8 @@ export interface SteganalysisClassifyResponse {
   model_type: string;
   feature_values: Record<string, number>;
   disclaimer: string;
+  is_calibrated?: boolean;
+  calibration_method?: string;
 }
 
 

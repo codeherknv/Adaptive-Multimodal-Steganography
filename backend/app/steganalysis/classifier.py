@@ -8,6 +8,7 @@ Safety & Integrity:
 The classification output is an empirical statistical prediction. The module includes
 an explicit disclaimer reminding researchers that ML detectors output probabilities,
 not mathematical or forensic proof of the presence or absence of steganography.
+Outputs are explicitly labeled as calibrated (e.g. Platt sigmoid) or uncalibrated scores.
 """
 
 from dataclasses import asdict, dataclass
@@ -37,6 +38,8 @@ class ClassificationResult:
     model_type: str                  # 'random_forest' or 'logistic_regression'
     feature_values: Dict[str, float] # Name-to-value map of extracted statistical features
     disclaimer: str
+    is_calibrated: bool = False
+    calibration_method: str = "none"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -109,7 +112,7 @@ def classify_media_file(
         default_ds = generate_modality_dataset(modality, num_sources=8)
         analyzer = train_steganalyzer(default_ds, model_type=model_type)
 
-    # 3. Inference
+    # 3. Model Inference (uses internal probability calibration when available)
     pred_label, stego_prob = analyzer.predict(feats)
     pred_class = "Stego" if pred_label == 1 else "Cover"
 
@@ -120,10 +123,12 @@ def classify_media_file(
         name: round(float(val), 5) for name, val in zip(names, feats)
     }
 
+    calib_desc = f"calibrated via {analyzer.calibration_method}" if analyzer.is_calibrated else "uncalibrated baseline score"
     disclaimer = (
-        "Notice: This prediction is an empirical statistical estimate from a baseline machine-learning "
-        "detector. A prediction of 'Cover' does not prove absence of hidden data, nor does 'Stego' "
-        "provide cryptographic proof of concealed communication."
+        f"Notice: This prediction is an empirical statistical estimate from a baseline machine-learning "
+        f"detector ({calib_desc}). Model scores reflect learned artifact patterns on training distributions; "
+        f"a prediction of 'Cover' does not prove absence of hidden data, nor does 'Stego' "
+        f"provide cryptographic proof of concealed communication."
     )
 
     return ClassificationResult(
@@ -136,4 +141,6 @@ def classify_media_file(
         model_type=model_type,
         feature_values=feats_dict,
         disclaimer=disclaimer,
+        is_calibrated=analyzer.is_calibrated,
+        calibration_method=analyzer.calibration_method,
     )

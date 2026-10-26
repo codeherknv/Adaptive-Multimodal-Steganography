@@ -300,6 +300,15 @@ export const Steganalysis: React.FC = () => {
                     <span className="text-xs font-mono text-zinc-300">
                       Modality: <span className="font-semibold uppercase text-accent">{inspectResult.modality}</span>
                     </span>
+                    {inspectResult.is_calibrated ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950/40 text-purple-300 border border-purple-800/50">
+                        {inspectResult.calibration_method}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        Uncalibrated Score
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -468,9 +477,20 @@ export const Steganalysis: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 text-[11px] font-mono">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Zero-Leakage Group Split Verified</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 text-[11px] font-mono">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Zero-Leakage Group Split Verified</span>
+                  </div>
+                  {selectedEvaluation.test_metrics.is_calibrated ? (
+                    <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-purple-950/40 border border-purple-800/40 text-purple-300 text-[11px] font-mono">
+                      <span>Calibrated ({selectedEvaluation.test_metrics.calibration_method})</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-400 text-[11px] font-mono">
+                      <span>Uncalibrated</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

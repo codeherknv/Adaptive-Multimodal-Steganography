@@ -95,3 +95,24 @@ class TestSteganalysisTraining:
         assert 0.0 <= result.confidence_percentage <= 100.0
         assert "Notice" in result.disclaimer
         assert len(result.feature_values) > 0
+
+    def test_probability_calibration_and_column_ordering(self, image_dataset):
+        """Verify probability calibration is fitted and positive class index is verified."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            analyzer = train_steganalyzer(
+                dataset=image_dataset,
+                model_type="random_forest",
+                models_dir=tmp_dir,
+            )
+            # Probability calibration flag and method must be populated
+            assert isinstance(analyzer.is_calibrated, bool)
+            assert analyzer.calibration_method != ""
+            assert analyzer.test_metrics.is_calibrated == analyzer.is_calibrated
+
+            # Test prediction probability
+            sample_feats = np.array(image_dataset.samples[0].features)
+            pred_lbl, prob = analyzer.predict(sample_feats)
+            assert pred_lbl in (0, 1)
+            assert 0.0 <= prob <= 1.0
+            # Consistent decision threshold
+            assert pred_lbl == int(prob >= 0.5)

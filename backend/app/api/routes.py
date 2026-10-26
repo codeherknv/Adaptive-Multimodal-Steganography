@@ -1392,6 +1392,8 @@ async def classify_single_media_file(
         model_type=result.model_type,
         feature_values=result.feature_values,
         disclaimer=result.disclaimer,
+        is_calibrated=result.is_calibrated,
+        calibration_method=result.calibration_method,
     )
 
 

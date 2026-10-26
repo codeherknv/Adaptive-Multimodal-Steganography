@@ -15,6 +15,9 @@ import {
   VideoCapacityResponse,
   VideoEmbedResponse,
   VideoExtractResponse,
+  MultimodalAnalyzeResponse,
+  MultimodalEmbedResponse,
+  MultimodalExtractResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -170,3 +173,35 @@ export const extractFromVideo = async (
   });
   return response.data;
 };
+
+// ---------------------------------------------------------
+// Multimodal Allocation & Orchestration API (Phase 6)
+// ---------------------------------------------------------
+
+export const analyzeMultimodalTriad = async (
+  formData: FormData
+): Promise<MultimodalAnalyzeResponse> => {
+  const response = await apiClient.post<MultimodalAnalyzeResponse>('/multimodal/analyze', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const embedMultimodal = async (
+  formData: FormData
+): Promise<MultimodalEmbedResponse> => {
+  const response = await apiClient.post<MultimodalEmbedResponse>('/multimodal/embed', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const extractMultimodal = async (
+  formData: FormData
+): Promise<MultimodalExtractResponse> => {
+  const response = await apiClient.post<MultimodalExtractResponse>('/multimodal/extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+

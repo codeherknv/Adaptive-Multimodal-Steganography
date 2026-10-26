@@ -200,3 +200,114 @@ export interface VideoExtractResponse {
   status: 'verified';
   message: string;
 }
+
+// ---------------------------------------------------------
+// Multimodal Allocation & Orchestration Types (Phase 6)
+// ---------------------------------------------------------
+
+export interface ImageProfile {
+  carrier_type: 'image';
+  width: number;
+  height: number;
+  channels: number;
+  color_mode: string;
+  total_carrier_bytes: number;
+  header_overhead_bytes: number;
+  max_usable_payload_bytes: number;
+  laplacian_variance: number;
+  mean_intensity: number;
+  std_intensity: number;
+  edge_density: number;
+  complexity_score: number;
+}
+
+export interface AudioProfile {
+  carrier_type: 'audio';
+  sample_rate: number;
+  bits_per_sample: number;
+  num_channels: number;
+  channel_layout: string;
+  total_samples: number;
+  duration_seconds: number;
+  total_carrier_bytes: number;
+  header_overhead_bytes: number;
+  max_usable_payload_bytes: number;
+  rms_energy: number;
+  sample_diff_variance: number;
+  mean_abs_diff: number;
+  complexity_score: number;
+}
+
+export interface VideoProfile {
+  carrier_type: 'video';
+  width: number;
+  height: number;
+  num_frames: number;
+  fps: number;
+  duration_seconds: number;
+  recommended_codec: string;
+  container_format: string;
+  total_carrier_bytes: number;
+  header_overhead_bytes: number;
+  max_usable_payload_bytes: number;
+  frame_diff_variance: number;
+  keyframe_laplacian_variance: number;
+  complexity_score: number;
+}
+
+export interface MultimodalAnalyzeResponse {
+  image: ImageProfile;
+  audio: AudioProfile;
+  video: VideoProfile;
+  total_usable_capacity_bytes: number;
+  capacity_shares: Record<string, number>;
+  simulated_allocation?: Record<string, any>;
+  message: string;
+}
+
+export interface CarrierAllocationOutcome {
+  carrier_type: string;
+  payload_bytes: number;
+  chunk_overhead_bytes: number;
+  total_carrier_payload_bytes: number;
+  carrier_usable_capacity_bytes: number;
+  carrier_net_capacity_bytes: number;
+  utilization_ratio: number;
+  complexity_score: number;
+  weight: number;
+  reason: string;
+}
+
+export interface MultimodalEmbedResponse {
+  zip_bundle_data_url: string;
+  filename: string;
+  key: string;
+  key_encoding: 'base64' | 'hex';
+  salt: string | null;
+  message_id: string;
+  strategy: string;
+  total_envelope_bytes: number;
+  total_usable_capacity_bytes: number;
+  overall_utilization_ratio: number;
+  allocations: Record<string, CarrierAllocationOutcome>;
+  metrics: {
+    image: { psnr_display: string; mse: number; ssim: number };
+    audio: { snr_display: string; mse: number };
+    video: { psnr_display: string; average_mse: number };
+  };
+  preview_frame_data_url: string;
+  manifest: Record<string, any>;
+  message: string;
+}
+
+export interface MultimodalExtractResponse {
+  plaintext: string;
+  message_id: string;
+  envelope_bytes_length: number;
+  chunk_count: number;
+  chunk_sizes: Record<string, number>;
+  verified: boolean;
+  manifest?: Record<string, any>;
+  message: string;
+}
+

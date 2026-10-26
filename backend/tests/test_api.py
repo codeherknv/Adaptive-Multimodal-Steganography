@@ -47,14 +47,14 @@ def test_health_endpoint(client):
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_5(client):
+def test_system_status_endpoint_phase_6(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 5
+    assert data["current_phase"] == 6
     assert "modules" in data
     
-    # Phase 1, 2, 3, 4, and 5 modules are implemented
+    # Phase 1, 2, 3, 4, 5, and 6 modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
     assert data["modules"]["payload_codec"]["status"] == "implemented"
@@ -64,10 +64,11 @@ def test_system_status_endpoint_phase_5(client):
     assert len(data["modules"]["audio_stego"]["capabilities"]) > 0
     assert data["modules"]["video_stego"]["status"] == "implemented"
     assert len(data["modules"]["video_stego"]["capabilities"]) > 0
-
+    assert data["modules"]["allocation"]["status"] == "implemented"
+    assert len(data["modules"]["allocation"]["capabilities"]) > 0
     # Future phases remain truthfully pending
-    assert data["modules"]["allocation"]["status"] == "pending"
     assert data["modules"]["steganalysis"]["status"] == "pending"
+    assert data["modules"]["evaluation_lab"]["status"] == "pending"
 
 
 class TestCryptoAPIEndpoints:
@@ -580,3 +581,123 @@ class TestVideoStegoAPIEndpoints:
             files={"video": ("bad.avi", b"NOT_A_VALID_VIDEO_CONTAINER_OR_CODEC", "video/x-msvideo")}
         )
         assert res.status_code == 400
+
+
+class TestMultimodalAPIEndpoints:
+    @pytest.fixture
+    def triad_files(self):
+        img_bytes = make_test_png_bytes(width=64, height=64)
+        aud_bytes = make_test_wav_bytes(duration=0.25, sample_rate=16000)
+        vid_bytes = make_test_video_bytes(num_frames=6, width=48, height=48)
+        return img_bytes, aud_bytes, vid_bytes
+
+    def test_multimodal_analyze_endpoint(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        res = client.post(
+            "/api/multimodal/analyze",
+            files={
+                "image": ("cover.png", img_b, "image/png"),
+                "audio": ("cover.wav", aud_b, "audio/wav"),
+                "video": ("cover.avi", vid_b, "video/x-msvideo"),
+            },
+            data={"payload_length": "200", "strategy": "adaptive"}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "image" in data
+        assert "audio" in data
+        assert "video" in data
+        assert data["total_usable_capacity_bytes"] > 0
+        assert data["simulated_allocation"] is not None
+        assert data["simulated_allocation"]["total_payload_bytes"] == 200
+
+    def test_multimodal_embed_and_extract_with_zip_bundle(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        secret = "Multimodal Triad API Integration Secret 🔐"
+        password = "ResearchPassword2026!"
+
+        # 1. Embed via API
+        embed_res = client.post(
+            "/api/multimodal/embed",
+            files={
+                "image": ("cover.png", img_b, "image/png"),
+                "audio": ("cover.wav", aud_b, "audio/wav"),
+                "video": ("cover.avi", vid_b, "video/x-msvideo"),
+            },
+            data={
+                "message": secret,
+                "strategy": "adaptive",
+                "password": password,
+                "encoding": "base64",
+            }
+        )
+        assert embed_res.status_code == 200
+        embed_data = embed_res.json()
+        assert "zip_bundle_data_url" in embed_data
+        assert "salt" in embed_data
+        salt_b64 = embed_data["salt"]
+        zip_data_url = embed_data["zip_bundle_data_url"]
+
+        # Decode ZIP bytes from data URL
+        header, b64_payload = zip_data_url.split(",", 1)
+        import base64
+        zip_bytes = base64.b64decode(b64_payload)
+
+        # 2. Extract using uploaded ZIP bundle
+        extract_res = client.post(
+            "/api/multimodal/extract",
+            files={"bundle_zip": ("bundle.zip", zip_bytes, "application/zip")},
+            data={
+                "password": password,
+                "salt": salt_b64,
+                "encoding": "base64",
+            }
+        )
+        assert extract_res.status_code == 200
+        ext_data = extract_res.json()
+        assert ext_data["plaintext"] == secret
+        assert ext_data["verified"] is True
+        assert ext_data["chunk_count"] == 3
+
+    def test_multimodal_embed_capacity_exceeded_returns_400(self, client):
+        tiny_img = make_test_png_bytes(width=16, height=16)
+        tiny_aud = make_test_wav_bytes(duration=0.05, sample_rate=8000)
+        tiny_vid = make_test_video_bytes(num_frames=1, width=16, height=16)
+
+        huge_message = "A" * 50_000
+        res = client.post(
+            "/api/multimodal/embed",
+            files={
+                "image": ("t_img.png", tiny_img, "image/png"),
+                "audio": ("t_aud.wav", tiny_aud, "audio/wav"),
+                "video": ("t_vid.avi", tiny_vid, "video/x-msvideo"),
+            },
+            data={"message": huge_message, "strategy": "adaptive"}
+        )
+        assert res.status_code == 400
+        assert "exceeds combined net multimodal capacity" in res.json()["detail"]
+
+    def test_multimodal_extract_wrong_password_returns_400(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        embed_res = client.post(
+            "/api/multimodal/embed",
+            files={
+                "image": ("c.png", img_b, "image/png"),
+                "audio": ("c.wav", aud_b, "audio/wav"),
+                "video": ("c.avi", vid_b, "video/x-msvideo"),
+            },
+            data={"message": "Test Secret", "password": "CorrectPassword1"}
+        )
+        embed_data = embed_res.json()
+        salt_b64 = embed_data["salt"]
+        import base64
+        zip_bytes = base64.b64decode(embed_data["zip_bundle_data_url"].split(",", 1)[1])
+
+        bad_res = client.post(
+            "/api/multimodal/extract",
+            files={"bundle_zip": ("bundle.zip", zip_bytes, "application/zip")},
+            data={"password": "IncorrectPassword999", "salt": salt_b64}
+        )
+        assert bad_res.status_code == 400
+        assert "authentication failed" in bad_res.json()["detail"].lower()
+

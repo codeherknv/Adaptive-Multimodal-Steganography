@@ -1,9 +1,9 @@
 import React from 'react';
-import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft, Layers } from 'lucide-react';
 import { HealthResponse } from '../api/types';
 import { StatusBadge } from './StatusBadge';
 
-export type TabType = 'overview' | 'sender' | 'receiver';
+export type TabType = 'overview' | 'sender' | 'receiver' | 'triad';
 
 interface HeaderProps {
   health: HealthResponse | null;
@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Adaptive Stego Lab
               </span>
               <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / Phase 5 Live
+                / Phase 6 Live
               </span>
             </div>
           </div>
@@ -99,6 +99,19 @@ export const Header: React.FC<HeaderProps> = ({
             <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400" />
             <span>Receiver (Extract)</span>
             <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('triad')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'triad'
+                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-accent" />
+            <span>Multimodal Triad</span>
+            <span className="text-[10px] text-accent/90 bg-accent/10 px-1 rounded border border-accent/30">Phase 6</span>
           </button>
 
           <div className="group relative">

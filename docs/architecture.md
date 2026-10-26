@@ -521,9 +521,52 @@ To quantify spatial alteration across the video stream, the evaluation engine (`
 
 ---
 
-## 13. Test Execution & Verification
+## 6. Multimodal Allocation & Orchestration Engine (Phase 6)
 
-To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, video stego, and quality metrics):
+Phase 6 introduces unified cross-modal coordination across Image, Audio, and Video carriers, implemented in `backend/app/allocation/`:
+
+### A. Carrier Profiling (`profiler.py`):
+Calculates exact usable capacities and domain complexity metrics:
+- **Image**: Dimensions ($W \times H$), Laplacian variance $\sigma^2_{\text{lap}}$, pixel intensity mean/std, edge density.
+- **Audio**: Sample rate, bit depth, channels, duration, RMS energy, sample-difference variance.
+- **Video**: Resolution, frame count, FPS, duration, inter-frame difference variance, keyframe Laplacian variance.
+
+### B. Allocation Strategies (`allocator.py`):
+1. **Fixed Baseline Strategy**: Strives for equal (1/3 each) payload distribution across available carriers. If a carrier's net capacity is less than its share, it is clamped to capacity, and the overflow is redistributed to remaining carriers with headroom (water-filling).
+2. **Adaptive Feature-Weighted Strategy**: Computes a Steganographic Suitability Weight $W_i = \alpha_i \times \sigma_i \times \log_2(1 + \text{Cap}_i)$ based on measured media entropy and capacity. Distributes more bytes to complex, high-entropy carriers with greater capacity while strictly enforcing capacity limits.
+
+### C. Capacity & Overhead Accounting Invariant:
+For carrier $i \in \{\text{image}, \text{audio}, \text{video}\}$:
+$$\text{Carrier Total Usable Capacity } C_i = \max(0, \text{RawBytes}_i - 14)$$
+$$\text{Carrier Net Envelope Payload Capacity } M_i = \max(0, C_i - 34)$$
+The 34-byte reduction accounts for the ASTG packet framing header.
+A payload of length $L$ can be embedded if and only if $\sum_{i=1}^3 M_i \ge L$.
+
+### D. Unified Orchestration (`engine.py`):
+- **Embedding**: Encrypts plaintext via AES-256-GCM $\to$ profiles carriers $\to$ allocates slices $\to$ creates 3 ASTG chunks $\to$ embeds into PNG (`PSTG`), WAV (`WSTG`), and AVI (`VSTG`) $\to$ generates non-secret `manifest.json` $\to$ packages all carriers into `stego_multimodal_bundle.zip`.
+- **Extraction**: Unpacks ZIP (or accepts 3 individual carriers) $\to$ extracts chunks $\to$ validates ASTG headers and CRC32 $\to$ checks UUID matching and total chunks $\to$ reassembles original envelope $\to$ decrypts via AES-256-GCM $\to$ returns verified plaintext.
+
+---
+
+## 7. Multimodal API Endpoints (Phase 6)
+
+### 1. `POST /api/multimodal/analyze`
+- **Request**: Multipart form data with `image`, `audio`, `video`, and optional `payload_length`, `strategy`.
+- **Response**: Comprehensive profiles for all 3 carriers, total usable capacity, capacity shares, and optional simulated allocation.
+
+### 2. `POST /api/multimodal/embed`
+- **Request**: Multipart form data with `message`, `image`, `audio`, `video`, `strategy` (`adaptive` or `fixed`), and optional `password` or `key`.
+- **Response**: `zip_bundle_data_url` (downloadable ZIP with all 3 stego carriers + manifest), `key`, `salt`, `message_id`, `allocations`, `metrics`, and first-frame video preview.
+
+### 3. `POST /api/multimodal/extract`
+- **Request**: Multipart form data with `bundle_zip` (OR individual `image`, `audio`, `video`), and `key` or `password` (+ `salt`).
+- **Response**: `plaintext`, `message_id`, `chunk_count` (3), `chunk_sizes`, `verified: true`.
+
+---
+
+## 8. Test Execution & Verification
+
+To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, video stego, profiler, allocator, multimodal engine, and API routes):
 
 ```powershell
 cd backend
@@ -531,4 +574,4 @@ cd backend
 pytest -v
 ```
 
-All **110 unit and integration tests** pass with zero errors.
+All **136 automated tests** pass with zero errors.

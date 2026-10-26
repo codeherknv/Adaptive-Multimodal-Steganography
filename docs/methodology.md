@@ -192,3 +192,39 @@ Students must understand the fundamental difference between spatial image stegan
   2. **Inter-Frame Difference Histograms**: Natural video exhibits smooth temporal transitions; spatial LSB replacement increases inter-frame variance and decorrelates adjacent frames.
 - **Core Principle**: High video PSNR demonstrates spatial transparency, but does **not** prove resistance against temporal video steganalysis. Supervised classification of multimodal steganalytic features will be developed in Phase 8.
 
+---
+
+## 9. Unified Multimodal Allocation & Rate-Distortion Principles (Phase 6)
+
+### 1. The Multimodal Synergistic Hypothesis
+In classical steganography, embedding an entire payload into a single medium concentrates embedding distortion into one domain, sharply elevating the relative payload rate (bits-per-pixel or bits-per-sample). Statistical and machine-learning detectors can easily detect the resulting distribution shift.
+
+The core hypothesis of multimodal allocation is that **distributing the payload across heterogeneous carriers reduces detectability**:
+$$\text{Global Risk } \mathcal{R} = f\left(\text{Risk}_{\text{image}}(L_{\text{img}}), \text{Risk}_{\text{audio}}(L_{\text{aud}}), \text{Risk}_{\text{video}}(L_{\text{vid}})\right)$$
+By partitioning the payload such that each carrier operates at a minimal embedding fraction, the overall anomaly footprint is minimized.
+
+### 2. Carrier Profiling Features
+Before allocation, candidate carriers are profiled:
+1. **Spatial Laplacian Variance (Image)**:
+   $$\sigma^2_{\text{lap}} = \text{Var}(\nabla^2 I)$$
+   Evaluates high-frequency texture. Smooth areas (low variance) show high detectability risk; textured regions (high variance) provide greater perceptual and statistical masking.
+2. **Acoustic Dynamism & RMS (Audio)**:
+   $$\text{RMS} = \sqrt{\frac{1}{N} \sum_{t=1}^N s(t)^2}, \quad \sigma^2_{\Delta s} = \text{Var}(s(t) - s(t-1))$$
+   Measures signal energy and dynamic fluctuations. Rapid acoustic transitions mask LSB replacements more effectively than silence or constant sinusoids.
+3. **Temporal Motion Variance (Video)**:
+   $$\sigma^2_{\text{diff}} = \text{Var}(F_t - F_{t-1})$$
+   Evaluates inter-frame motion dynamism. Moving objects and camera motion mask high-frequency pixel variations far better than static scenes.
+
+### 3. Allocation Strategy Formulations
+- **Fixed Baseline Strategy**:
+  Divides the payload equally across carriers ($L / 3$). If any carrier $k$ has net capacity $M_k < L / 3$, it is clamped to $M_k$, and the deficit is distributed via water-filling to the remaining carriers with headroom.
+- **Adaptive Feature-Weighted Strategy**:
+  Assigns suitability weights $W_i = \alpha_i \times \sigma_i \times \log_2(1 + M_i)$, allocating bytes proportional to $W_i$, followed by iterative bounded clamping and residual integer remainder distribution.
+
+### 4. Framing Overhead & Capacity Invariants
+Every chunk embedded in carrier $i$ requires a 34-byte ASTG packet header. In turn, each carrier module adds its 14-byte carrier frame header (`PSTG`, `WSTG`, `VSTG`).
+The maximum payload an envelope can carry in carrier $i$ is strictly:
+$$M_i = \max(0, C_i - 34)$$
+where $C_i$ is the carrier's usable capacity. Total net multimodal capacity $\sum M_i$ must be $\ge L_{\text{envelope}}$, otherwise the request is safely rejected with `MultimodalCapacityExceededError`.
+
+

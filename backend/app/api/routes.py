@@ -3,7 +3,7 @@
 import base64
 import os
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.config import settings
@@ -52,6 +52,23 @@ from app.media.video_stego import (
     UnsupportedVideoFormatError,
     CodecUnavailableError,
 )
+from app.allocation.profiler import (
+    profile_multimodal_triad,
+    ProfilingError,
+    InvalidCarrierError,
+)
+from app.allocation.allocator import (
+    get_allocation_strategy,
+    AllocationError,
+    MultimodalCapacityExceededError,
+)
+from app.allocation.engine import (
+    embed_multimodal,
+    extract_multimodal,
+    unpack_stego_zip_bundle,
+    MultimodalEngineError,
+    CarrierExtractionMismatchError,
+)
 from app.schemas import (
     HealthResponse,
     SystemStatusResponse,
@@ -72,6 +89,13 @@ from app.schemas import (
     VideoQualityMetricsResponse,
     VideoEmbedResponse,
     VideoExtractResponse,
+    ImageProfileResponse,
+    AudioProfileResponse,
+    VideoProfileResponse,
+    MultimodalCarrierAllocationResponse,
+    MultimodalAnalyzeResponse,
+    MultimodalEmbedResponse,
+    MultimodalExtractResponse,
 )
 
 router = APIRouter()
@@ -181,21 +205,28 @@ async def get_system_status() -> SystemStatusResponse:
         ),
         "allocation": ModuleStatus(
             name="Payload Allocation Engine",
-            phase=7,
-            status="pending",
-            description="Fixed deterministic and empirical adaptive allocation across multimodal carriers.",
-            capabilities=[]
+            phase=6,
+            status="implemented",
+            description="Fixed baseline and entropy-weighted adaptive allocation across Image, Audio, and Video.",
+            capabilities=[
+                "Multimodal Carrier Profiling (Laplacian, RMS, Motion Variance)",
+                "Fixed Equal-Split Allocation with Overflow Water-Filling",
+                "Adaptive Feature-Weighted Rate-Distortion Optimization",
+                "ASTG Chunk Slicing & Header Capacity Accounting",
+                "Unified Triad Embedding & Zip Bundling",
+                "Cross-Carrier Consistent Reassembly & AES-256-GCM Verification"
+            ]
         ),
         "steganalysis": ModuleStatus(
             name="ML Steganalysis Classifier",
-            phase=8,
+            phase=7,
             status="pending",
             description="Cover vs. stego feature extraction and supervised classification baselines.",
             capabilities=[]
         ),
         "evaluation_lab": ModuleStatus(
             name="Evaluation & Benchmarking Laboratory",
-            phase=9,
+            phase=8,
             status="pending",
             description="Systematic measurement of PSNR, SNR, BER, recovery reliability, and CSV export.",
             capabilities=[]
@@ -205,7 +236,7 @@ async def get_system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=5,
+        current_phase=6,
         modules=modules
     )
 
@@ -853,3 +884,289 @@ async def extract_envelope_from_video(
         status="verified",
         message="Successfully extracted and verified authenticated envelope from video carrier."
     )
+
+
+# ---------------------------------------------------------
+# Multimodal Allocation & Orchestration Endpoints (Phase 6)
+# ---------------------------------------------------------
+
+@router.post(
+    "/multimodal/analyze",
+    response_model=MultimodalAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Profile Multimodal Carrier Triad",
+    description="Inspects candidate Image, Audio, and Video carriers, calculating usable capacities and media complexity metrics."
+)
+async def analyze_multimodal_triad(
+    image: UploadFile = File(..., description="Candidate PNG image file"),
+    audio: UploadFile = File(..., description="Candidate WAV audio file"),
+    video: UploadFile = File(..., description="Candidate AVI video file"),
+    payload_length: Optional[int] = Form(None, description="Optional simulated payload length in bytes"),
+    strategy: Literal["fixed", "adaptive"] = Form("adaptive", description="Simulated allocation strategy")
+) -> MultimodalAnalyzeResponse:
+    # 1. Read files
+    img_bytes = await image.read()
+    aud_bytes = await audio.read()
+    vid_bytes = await video.read()
+
+    for name, data in [("Image", img_bytes), ("Audio", aud_bytes), ("Video", vid_bytes)]:
+        if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"{name} file exceeds maximum upload size limit."
+            )
+
+    # 2. Profile carriers
+    try:
+        triad_profile = profile_multimodal_triad(img_bytes, aud_bytes, vid_bytes)
+    except (InvalidCarrierError, ProfilingError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Carrier profiling failed: {str(e)}"
+        )
+
+    # 3. Optional simulated allocation
+    simulated = None
+    if payload_length is not None and payload_length > 0:
+        try:
+            alloc_strategy = get_allocation_strategy(strategy)
+            sim_plan = alloc_strategy.allocate(payload_length, triad_profile)
+            simulated = sim_plan.to_dict()
+        except MultimodalCapacityExceededError as e:
+            simulated = {"error": str(e), "exceeded": True}
+        except AllocationError as e:
+            simulated = {"error": str(e), "exceeded": True}
+
+    return MultimodalAnalyzeResponse(
+        image=ImageProfileResponse(**triad_profile.image.to_dict()),
+        audio=AudioProfileResponse(**triad_profile.audio.to_dict()),
+        video=VideoProfileResponse(**triad_profile.video.to_dict()),
+        total_usable_capacity_bytes=triad_profile.total_usable_capacity_bytes,
+        capacity_shares=triad_profile.capacity_shares,
+        simulated_allocation=simulated,
+        message="Multimodal carrier triad successfully profiled."
+    )
+
+
+@router.post(
+    "/multimodal/embed",
+    response_model=MultimodalEmbedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Embed Payload Across Multimodal Triad",
+    description="Encrypts message, allocates chunks across Image, Audio, and Video, embeds with framing, and returns a downloadable ZIP bundle."
+)
+async def embed_payload_multimodal(
+    message: str = Form(..., max_length=1_000_000, description="Secret message text to conceal"),
+    strategy: Literal["fixed", "adaptive"] = Form("adaptive", description="Allocation strategy ('fixed' or 'adaptive')"),
+    password: Optional[str] = Form(None, min_length=1, max_length=1024, description="Optional passphrase for key derivation"),
+    key: Optional[str] = Form(None, description="Optional 32-byte AES key (base64 or hex)"),
+    salt: Optional[str] = Form(None, description="Optional salt for password derivation"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Key and salt encoding format"),
+    image: UploadFile = File(..., description="Cover PNG image carrier"),
+    audio: UploadFile = File(..., description="Cover WAV audio carrier"),
+    video: UploadFile = File(..., description="Cover AVI video carrier"),
+) -> MultimodalEmbedResponse:
+    if key and password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either 'key' or 'password', not both."
+        )
+
+    # Decode key / salt if provided
+    key_bytes = None
+    salt_bytes = None
+    decode_func = bytes_from_base64 if encoding == "base64" else bytes_from_hex
+
+    if key:
+        try:
+            key_bytes = decode_func(key)
+            validate_key(key_bytes)
+        except InvalidKeyError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if salt:
+        try:
+            salt_bytes = decode_func(salt)
+        except InvalidKeyError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Read carrier files
+    img_bytes = await image.read()
+    aud_bytes = await audio.read()
+    vid_bytes = await video.read()
+
+    for name, data in [("Image", img_bytes), ("Audio", aud_bytes), ("Video", vid_bytes)]:
+        if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"{name} file exceeds maximum upload size limit."
+            )
+
+    try:
+        res = embed_multimodal(
+            message=message,
+            image_bytes=img_bytes,
+            audio_bytes=aud_bytes,
+            video_bytes=vid_bytes,
+            password=password,
+            key_bytes=key_bytes,
+            salt_bytes=salt_bytes,
+            strategy_name=strategy,
+        )
+    except MultimodalCapacityExceededError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except (InvalidCarrierError, ProfilingError, AllocationError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except MultimodalEngineError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Multimodal embedding failed: {str(e)}"
+        )
+
+    # Format return data
+    encode_func = bytes_to_base64 if encoding == "base64" else bytes_to_hex
+    zip_b64 = base64.b64encode(res.zip_bundle_bytes).decode("ascii")
+    preview_b64 = base64.b64encode(res.preview_frame_bytes).decode("ascii")
+
+    alloc_dict = {
+        k: MultimodalCarrierAllocationResponse(**v.to_dict())
+        for k, v in res.allocation_plan.allocations.items()
+    }
+
+    metrics_consolidated = {
+        "image": {
+            "psnr_display": res.image_metrics.get("psnr_display", "N/A"),
+            "mse": res.image_metrics.get("mse", 0.0),
+            "ssim": res.image_metrics.get("ssim", 1.0),
+        },
+        "audio": {
+            "snr_display": res.audio_metrics.get("snr_display", "N/A"),
+            "mse": res.audio_metrics.get("normalized_mse", 0.0),
+        },
+        "video": {
+            "psnr_display": res.video_metrics.get("psnr_display", "N/A"),
+            "average_mse": res.video_metrics.get("average_mse", 0.0),
+        },
+    }
+
+    return MultimodalEmbedResponse(
+        zip_bundle_data_url=f"data:application/zip;base64,{zip_b64}",
+        filename="stego_multimodal_bundle.zip",
+        key=encode_func(res.key_bytes),
+        key_encoding=encoding,
+        salt=encode_func(res.salt_bytes) if res.salt_bytes else None,
+        message_id=res.message_id_hex,
+        strategy=res.allocation_plan.strategy_name,
+        total_envelope_bytes=res.allocation_plan.total_payload_bytes,
+        total_usable_capacity_bytes=res.allocation_plan.total_usable_capacity_bytes,
+        overall_utilization_ratio=res.allocation_plan.overall_utilization_ratio,
+        allocations=alloc_dict,
+        metrics=metrics_consolidated,
+        preview_frame_data_url=f"data:image/png;base64,{preview_b64}",
+        manifest=res.manifest,
+        message="Payload successfully partitioned, encrypted, and embedded across Image, Audio, and Video."
+    )
+
+
+@router.post(
+    "/multimodal/extract",
+    response_model=MultimodalExtractResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract and Decrypt Payload from Multimodal Triad",
+    description="Extracts chunks from all three carriers (or uploaded ZIP bundle), reassembles ASTG envelope, and authenticates decryption via AES-256-GCM."
+)
+async def extract_payload_multimodal(
+    bundle_zip: Optional[UploadFile] = File(None, description="Stego multimodal ZIP bundle"),
+    image: Optional[UploadFile] = File(None, description="Stego PNG image carrier"),
+    audio: Optional[UploadFile] = File(None, description="Stego WAV audio carrier"),
+    video: Optional[UploadFile] = File(None, description="Stego AVI video carrier"),
+    key: Optional[str] = Form(None, description="The 32-byte AES-256 key"),
+    password: Optional[str] = Form(None, description="Passphrase used during encryption"),
+    salt: Optional[str] = Form(None, description="Salt for password derivation"),
+    encoding: Literal["base64", "hex"] = Form("base64", description="Key and salt input encoding format"),
+) -> MultimodalExtractResponse:
+    if not key and not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either 'key' or 'password' for decryption."
+        )
+
+    decode_func = bytes_from_base64 if encoding == "base64" else bytes_from_hex
+    key_bytes = None
+    salt_bytes = None
+
+    if key:
+        try:
+            key_bytes = decode_func(key)
+            validate_key(key_bytes)
+        except InvalidKeyError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if salt:
+        try:
+            salt_bytes = decode_func(salt)
+        except InvalidKeyError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    manifest_dict = None
+
+    # Option A: Uploaded ZIP bundle
+    if bundle_zip is not None:
+        zip_bytes = await bundle_zip.read()
+        try:
+            img_bytes, aud_bytes, vid_bytes, manifest_dict = unpack_stego_zip_bundle(zip_bytes)
+        except MultimodalEngineError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Option B: Uploaded 3 individual files
+    elif image is not None and audio is not None and video is not None:
+        img_bytes = await image.read()
+        aud_bytes = await audio.read()
+        vid_bytes = await video.read()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either 'bundle_zip' OR all three individual carrier files ('image', 'audio', 'video')."
+        )
+
+    # Perform extraction and decryption
+    try:
+        ext_res = extract_multimodal(
+            stego_image_bytes=img_bytes,
+            stego_audio_bytes=aud_bytes,
+            stego_video_bytes=vid_bytes,
+            key_bytes=key_bytes,
+            password=password,
+            salt_bytes=salt_bytes,
+            manifest_dict=manifest_dict,
+        )
+    except CarrierExtractionMismatchError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cross-carrier extraction mismatch: {str(e)}"
+        )
+    except MultimodalEngineError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Multimodal extraction failed: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Extraction or decryption failed: {str(e)}"
+        )
+
+    return MultimodalExtractResponse(
+        plaintext=ext_res.plaintext,
+        message_id=ext_res.message_id_hex,
+        envelope_bytes_length=ext_res.envelope_bytes_length,
+        chunk_count=ext_res.chunk_count,
+        chunk_sizes=ext_res.chunk_sizes,
+        verified=ext_res.verified,
+        manifest=ext_res.manifest,
+        message="Successfully authenticated, reassembled, and decrypted multimodal secret message."
+    )
+

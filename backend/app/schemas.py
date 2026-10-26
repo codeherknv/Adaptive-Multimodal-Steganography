@@ -1,7 +1,7 @@
 """Pydantic schemas for API request and response validation."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -352,3 +352,123 @@ class VideoExtractResponse(BaseModel):
         "Successfully extracted authenticated envelope from video carrier.",
         description="Status message."
     )
+
+
+# ---------------------------------------------------------
+# Multimodal Allocation & Orchestration Schemas (Phase 6)
+# ---------------------------------------------------------
+
+class ImageProfileResponse(BaseModel):
+    """Profiling features and capacity metrics for an image carrier."""
+    carrier_type: Literal["image"] = "image"
+    width: int
+    height: int
+    channels: int
+    color_mode: str
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+    laplacian_variance: float
+    mean_intensity: float
+    std_intensity: float
+    edge_density: float
+    complexity_score: float
+
+
+class AudioProfileResponse(BaseModel):
+    """Profiling features and capacity metrics for a WAV audio carrier."""
+    carrier_type: Literal["audio"] = "audio"
+    sample_rate: int
+    bits_per_sample: int
+    num_channels: int
+    channel_layout: str
+    total_samples: int
+    duration_seconds: float
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+    rms_energy: float
+    sample_diff_variance: float
+    mean_abs_diff: float
+    complexity_score: float
+
+
+class VideoProfileResponse(BaseModel):
+    """Profiling features and capacity metrics for a video carrier."""
+    carrier_type: Literal["video"] = "video"
+    width: int
+    height: int
+    num_frames: int
+    fps: float
+    duration_seconds: float
+    recommended_codec: str
+    container_format: str
+    total_carrier_bytes: int
+    header_overhead_bytes: int
+    max_usable_payload_bytes: int
+    frame_diff_variance: float
+    keyframe_laplacian_variance: float
+    complexity_score: float
+
+
+class MultimodalCarrierAllocationResponse(BaseModel):
+    """Allocation outcome for a single carrier channel."""
+    carrier_type: str
+    payload_bytes: int
+    chunk_overhead_bytes: int
+    total_carrier_payload_bytes: int
+    carrier_usable_capacity_bytes: int
+    carrier_net_capacity_bytes: int
+    utilization_ratio: float
+    complexity_score: float
+    weight: float
+    reason: str
+
+
+class MultimodalAnalyzeResponse(BaseModel):
+    """Response containing comprehensive profiles of candidate cover carriers."""
+    image: ImageProfileResponse
+    audio: AudioProfileResponse
+    video: VideoProfileResponse
+    total_usable_capacity_bytes: int
+    capacity_shares: Dict[str, float]
+    simulated_allocation: Optional[Dict[str, Any]] = None
+    message: str = "Multimodal carrier triad successfully profiled."
+
+
+class MultimodalEmbedResponse(BaseModel):
+    """Response containing downloadable stego bundle, allocation report, and fidelity metrics."""
+    zip_bundle_data_url: str = Field(
+        ...,
+        description="Base64 data URL (data:application/zip;base64,...) of the full stego bundle."
+    )
+    filename: str = Field("stego_multimodal_bundle.zip", description="Suggested ZIP filename.")
+    key: str = Field(..., description="The 32-byte AES-256 key (keep safe and separate from bundle).")
+    key_encoding: Literal["base64", "hex"] = "base64"
+    salt: Optional[str] = Field(None, description="PBKDF2 salt if password derivation was used.")
+    message_id: str
+    strategy: str
+    total_envelope_bytes: int
+    total_usable_capacity_bytes: int
+    overall_utilization_ratio: float
+    allocations: Dict[str, MultimodalCarrierAllocationResponse]
+    metrics: Dict[str, Any]
+    preview_frame_data_url: str
+    manifest: Dict[str, Any]
+    message: str = Field(
+        "Payload successfully partitioned, encrypted, and embedded across Image, Audio, and Video.",
+        description="Status message."
+    )
+
+
+class MultimodalExtractResponse(BaseModel):
+    """Response containing recovered plaintext from multimodal triad carriers."""
+    plaintext: str
+    message_id: str
+    envelope_bytes_length: int
+    chunk_count: int
+    chunk_sizes: Dict[str, int]
+    verified: bool = True
+    manifest: Optional[Dict[str, Any]] = None
+    message: str = "Successfully authenticated, reassembled, and decrypted multimodal secret message."
+

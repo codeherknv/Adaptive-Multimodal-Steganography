@@ -12,7 +12,7 @@ Research platform for adaptive payload allocation and machine-learning-based ste
 
 ---
 
-## Current Status: Phase 5 Implemented & Verified
+## Current Status: Phase 6 Implemented & Verified
 
 ### Implemented Modules:
 1. **Infrastructure & Monorepo (Phase 1)**: FastAPI application, Vite dev proxy, Pydantic configuration, dark minimal research workbench.
@@ -21,7 +21,11 @@ Research platform for adaptive payload allocation and machine-learning-based ste
 4. **Spatial LSB Image Steganography (Phase 3)**: Lossless PNG carrier embedding/extraction with 14-byte binary framing (`b"PSTG"`), CRC32 integrity verification, RGBA alpha-channel preservation, and distortion metrics (MSE, PSNR, SSIM).
 5. **PCM WAV Audio Steganography (Phase 4)**: Uncompressed 16-bit and 8-bit PCM WAV sample LSB embedding/extraction with 14-byte binary framing (`b"WSTG"`), interleaved multi-channel preservation (mono & stereo), audio header/duration preservation, and distortion metrics (normalized MSE, SNR in dB).
 6. **Frame-Based Video Steganography (Phase 5)**: Multi-frame spatial LSB embedding/extraction across video frames using OpenCV and lossless codecs (FFV1 in AVI/MKV), 14-byte binary framing (`b"VSTG"`), video parameter preservation (resolution, FPS, frame count), and distortion metrics (average frame MSE, average frame PSNR).
-7. **Interactive Multimodal Sender & Receiver Workflows (Phase 5)**: React + TypeScript UI supporting PNG Image, WAV Audio, and Video carrier modes for end-to-end encryption, capacity checks, embedding, stego download, and authenticated decryption.
+7. **Unified Multimodal Allocation & Orchestration (Phase 6)**:
+   - Carrier profiling (`profiler.py`): Measures Laplacian variance, RMS acoustic energy, and inter-frame temporal difference variance.
+   - Allocation policies (`allocator.py`): Fixed baseline (equal split + water-filling) and adaptive feature-weighted rate-distortion strategy.
+   - Unified orchestration (`engine.py`): Partitions encrypted envelope across PNG, WAV, and AVI carriers, packages bundle into a ZIP archive with non-secret manifest, and reassembles/decrypts from either ZIP or individual carriers.
+8. **Multimodal Triad Workbench (Phase 6)**: Full-featured React workbench for 3-carrier profiling, strategy comparison, bundle download, and unified extraction.
 
 ---
 
@@ -55,7 +59,7 @@ python -m uvicorn app.main:app --reload --port 8000
 cd backend
 .\venv\Scripts\pytest -v
 ```
-Currently passes **110 automated tests** (API integration, AES-GCM cryptography, binary payload codec, PNG LSB steganography, PCM WAV audio steganography, video frame steganography, and media distortion metrics).
+Currently passes **136 automated tests** (API integration, AES-GCM cryptography, binary payload codec, PNG LSB steganography, PCM WAV audio steganography, video frame steganography, carrier profiling, fixed & adaptive allocation, and multimodal orchestration).
 
 ### 3. Running the Frontend Development Server
 ```powershell

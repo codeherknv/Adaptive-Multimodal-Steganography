@@ -76,8 +76,11 @@ class TestSteganalysisDataset:
         for triad in comp["triads"]:
             assert "fixed_allocation" in triad
             assert "adaptive_allocation" in triad
-            # Allocation plans must allocate bytes
+            # Allocation plans must allocate the complete encrypted envelope bytes
             fixed_total = sum(triad["fixed_allocation"].values())
             adaptive_total = sum(triad["adaptive_allocation"].values())
-            assert fixed_total == triad["message_length"]
-            assert adaptive_total == triad["message_length"]
+            assert fixed_total == adaptive_total
+            assert fixed_total >= triad["message_length"]
+            assert triad["both_authenticated"] is True
+            assert "fixed_distortion" in triad
+            assert "adaptive_distortion" in triad

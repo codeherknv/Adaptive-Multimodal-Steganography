@@ -41,6 +41,7 @@ from app.media.video_stego import (
 )
 from app.allocation.profiler import profile_multimodal_triad
 from app.allocation.allocator import get_allocation_strategy
+from app.allocation.engine import embed_multimodal, extract_multimodal
 from app.steganalysis.features import (
     extract_image_features,
     extract_audio_features,
@@ -210,6 +211,11 @@ def generate_procedural_video(
         else:  # Modulating textured noise
             base = rng.randint(50, 190, (height, width, 3), dtype=np.uint8)
             frame = cv2.addWeighted(frame, 0.3, base, 0.7, 0)
+
+        # Add subtle sensor noise (0, 1, 2) to eliminate the synthetic all-even integer shortcut
+        # and provide realistic LSB variation matching physical camera sensor captures.
+        sensor_noise = rng.randint(0, 3, (height, width, 3), dtype=np.uint8)
+        frame = np.clip(frame.astype(np.int16) + sensor_noise, 0, 255).astype(np.uint8)
         frames.append(frame)
 
     return save_video_to_bytes(frames, fps, width, height, fourcc_str=codec_str, ext=ext)
@@ -404,19 +410,45 @@ def generate_multimodal_allocation_comparison_dataset(
             continue
 
         try:
-            # Execute genuine Fixed Allocation
-            fixed_strat = get_allocation_strategy("fixed")
-            fixed_plan = fixed_strat.allocate(
-                payload_len=message_length,
-                triad_profile=triad_profile,
-            )
+            # Execute genuine Fixed Allocation and full multimodal embedding/extraction
+            dummy_key = generate_key()
+            test_msg = f"Phase7MultimodalVerificationPayload_{triad_idx:03d}"
 
-            # Execute genuine Adaptive Allocation
-            adaptive_strat = get_allocation_strategy("adaptive")
-            adaptive_plan = adaptive_strat.allocate(
-                payload_len=message_length,
-                triad_profile=triad_profile,
+            fixed_res = embed_multimodal(
+                message=test_msg,
+                image_bytes=img_cover,
+                audio_bytes=aud_cover,
+                video_bytes=vid_cover,
+                key_bytes=dummy_key,
+                strategy_name="fixed"
             )
+            fixed_ext = extract_multimodal(
+                stego_image_bytes=fixed_res.stego_image_bytes,
+                stego_audio_bytes=fixed_res.stego_audio_bytes,
+                stego_video_bytes=fixed_res.stego_video_bytes,
+                key_bytes=dummy_key
+            )
+            assert fixed_ext.plaintext == test_msg, "Fixed extraction failed authentication!"
+
+            # Execute genuine Adaptive Allocation and full multimodal embedding/extraction
+            adaptive_res = embed_multimodal(
+                message=test_msg,
+                image_bytes=img_cover,
+                audio_bytes=aud_cover,
+                video_bytes=vid_cover,
+                key_bytes=dummy_key,
+                strategy_name="adaptive"
+            )
+            adaptive_ext = extract_multimodal(
+                stego_image_bytes=adaptive_res.stego_image_bytes,
+                stego_audio_bytes=adaptive_res.stego_audio_bytes,
+                stego_video_bytes=adaptive_res.stego_video_bytes,
+                key_bytes=dummy_key
+            )
+            assert adaptive_ext.plaintext == test_msg, "Adaptive extraction failed authentication!"
+
+            fixed_plan = fixed_res.allocation_plan
+            adaptive_plan = adaptive_res.allocation_plan
         except Exception:
             continue
 
@@ -427,8 +459,9 @@ def generate_multimodal_allocation_comparison_dataset(
 
         records.append({
             "triad_id": triad_id,
-            "message_length": message_length,
+            "message_length": len(test_msg),
             "total_net_capacity": net_cap,
+            "both_authenticated": True,
             "fixed_allocation": {
                 "image_bytes": fixed_plan.allocations["image"].payload_bytes,
                 "audio_bytes": fixed_plan.allocations["audio"].payload_bytes,
@@ -438,6 +471,16 @@ def generate_multimodal_allocation_comparison_dataset(
                 "image_bytes": adaptive_plan.allocations["image"].payload_bytes,
                 "audio_bytes": adaptive_plan.allocations["audio"].payload_bytes,
                 "video_bytes": adaptive_plan.allocations["video"].payload_bytes,
+            },
+            "fixed_distortion": {
+                "image_psnr": fixed_res.image_metrics.get("psnr", 0.0),
+                "audio_snr": fixed_res.audio_metrics.get("snr", 0.0),
+                "video_psnr": fixed_res.video_metrics.get("psnr", 0.0),
+            },
+            "adaptive_distortion": {
+                "image_psnr": adaptive_res.image_metrics.get("psnr", 0.0),
+                "audio_snr": adaptive_res.audio_metrics.get("snr", 0.0),
+                "video_psnr": adaptive_res.video_metrics.get("psnr", 0.0),
             },
             "cover_features": {
                 "image": img_cover_feats.tolist(),

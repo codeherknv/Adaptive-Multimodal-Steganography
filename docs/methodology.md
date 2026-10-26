@@ -227,4 +227,40 @@ The maximum payload an envelope can carry in carrier $i$ is strictly:
 $$M_i = \max(0, C_i - 34)$$
 where $C_i$ is the carrier's usable capacity. Total net multimodal capacity $\sum M_i$ must be $\ge L_{\text{envelope}}$, otherwise the request is safely rejected with `MultimodalCapacityExceededError`.
 
+---
+
+## 10. Machine-Learning Steganalysis & Detectability Methodology (Phase 7)
+
+### 1. Statistical Principles of LSB Detection
+Least-significant-bit replacement modifies the discrete distribution of sample values in predictable statistical ways:
+1. **Pairs of Values (PoV) Equalization**:
+   In natural media, adjacent even-odd sample values $(2k, 2k+1)$ usually exhibit asymmetric frequencies due to continuous gradient dynamics:
+   $$h(2k) \neq h(2k+1)$$
+   Embedding encrypted pseudorandom ciphertext into the LSB equalizes these bins because a bit flip transitions $2k \leftrightarrow 2k+1$ with equal probability:
+   $$\lim_{L \to \text{Cap}} |h(2k) - h(2k+1)| = 0$$
+   Our feature extractor quantifies this via the normalized PoV asymmetry metric across channels.
+2. **Difference Histogram Flattening & Kurtosis Drop**:
+   First-order difference histograms $\Delta s = s_i - s_{i-1}$ of natural media typically exhibit high kurtosis (sharp Laplacian peaks at 0 with heavy tails). Random LSB replacement acts as independent additive uniform noise $\pm 1$, broadening the peak and noticeably reducing sample difference kurtosis.
+3. **Temporal Inter-Frame Decorrelation in Video**:
+   In natural video sequences, corresponding pixels across consecutive frames $F_t(x, y)$ and $F_{t-1}(x, y)$ are strongly correlated. Spatial LSB replacement introduces independent Bernoulli noise in each frame, creating an abnormal spike in inter-frame difference variance and LSB toggle rates.
+
+### 2. Experimental Rigor: Zero Data Leakage Architecture
+A pervasive methodological error in published steganography literature is naive random sample splitting ($K$-fold or train/test split without grouping).
+Because a stego file is derived directly from an original cover, both files share virtually identical scene composition, lighting, audio tone, or video motion. A naive classifier memorizes the background scene rather than detecting the steganographic embedding artifact, resulting in artificially inflated test accuracies.
+
+To guarantee zero data leakage:
+1. **Source Group Partitioning**:
+   Every cover is assigned a unique `source_id`. All stego variants derived from that cover inherit the exact same `source_id`. We enforce `GroupShuffleSplit` on `source_id`, guaranteeing:
+   $$\text{Sources}_{\text{train}} \cap \text{Sources}_{\text{test}} = \emptyset$$
+2. **Preprocessing Isolation**:
+   Feature scalers (`StandardScaler`) are fitted strictly on $X_{\text{train}}$. The test set $X_{\text{test}}$ is transformed using the frozen parameters $(\mu_{\text{train}}, \sigma_{\text{train}})$, preventing test set distribution leakage.
+3. **Matched-Condition Comparisons**:
+   Fixed baseline and adaptive feature allocation are evaluated under identical source covers and matched payload density brackets to ensure fair empirical comparisons.
+
+### 3. Scientific Integrity & Model Limitations
+1. **Statistical Prediction vs. Forensic Proof**:
+   An ML classifier output of label 0 ("Cover") with low stego probability is an empirical statistical prediction on extracted features. It is **not** mathematical proof of the absence of hidden data.
+2. **Separation of Quality from Security**:
+   High perceptual quality (PSNR $> 50\text{ dB}$, SSIM $> 0.99$, SNR $> 60\text{ dB}$) confirms that humans cannot perceive distortion, but provides zero immunity against statistical or ML detectors. In this research platform, fidelity metrics and detectability metrics are strictly measured and reported as distinct evaluation axes.
+
 

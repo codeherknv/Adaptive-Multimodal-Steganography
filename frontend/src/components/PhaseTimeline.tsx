@@ -71,9 +71,10 @@ const PHASES_DATA: PhaseItem[] = [
   {
     id: 7,
     title: "Steganalysis Dataset Pipeline & ML Baselines",
-    scope: "Extract first- and higher-order statistical features from cover/stego media and train scikit-learn classifiers.",
-    acceptanceCriteria: "Zero-leakage source partitioning; Confusion matrix, ROC-AUC, precision, recall, and F1 measured.",
-    status: "staged",
+    scope: "Extract first- and higher-order statistical features from cover/stego media, enforce zero-leakage source partitioning, and train scikit-learn classifiers.",
+    acceptanceCriteria: "Zero-leakage source partitioning; Confusion matrix, ROC-AUC, precision, recall, and F1 measured across matched conditions.",
+    status: "completed",
+    verificationEvidence: "156 automated tests passing; 10 image, 8 audio, 7 video statistical features, GroupShuffleSplit zero-leakage training, and model evaluation verified."
   },
   {
     id: 9,
@@ -115,8 +116,8 @@ const PHASES_DATA: PhaseItem[] = [
 export const PhaseTimeline: React.FC = () => {
   const [showAllPhases, setShowAllPhases] = useState<boolean>(false);
 
-  // By default, display through Phase 5 to maintain compact view, with toggle to inspect full curriculum
-  const displayedPhases = showAllPhases ? PHASES_DATA : PHASES_DATA.slice(0, 6);
+  // By default, display through Phase 7 to maintain compact view, with toggle to inspect full curriculum
+  const displayedPhases = showAllPhases ? PHASES_DATA : PHASES_DATA.slice(0, 8);
 
   return (
     <section className="border border-canvas-border bg-canvas-surface rounded-lg p-6 space-y-4">

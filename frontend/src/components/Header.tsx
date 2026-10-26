@@ -1,9 +1,9 @@
 import React from 'react';
-import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft, Layers } from 'lucide-react';
+import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft, Layers, ShieldAlert } from 'lucide-react';
 import { HealthResponse } from '../api/types';
 import { StatusBadge } from './StatusBadge';
 
-export type TabType = 'overview' | 'sender' | 'receiver' | 'triad';
+export type TabType = 'overview' | 'sender' | 'receiver' | 'triad' | 'steganalysis';
 
 interface HeaderProps {
   health: HealthResponse | null;
@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Adaptive Stego Lab
               </span>
               <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / Phase 6 Live
+                / Phase 7 Live
               </span>
             </div>
           </div>
@@ -114,15 +114,18 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-[10px] text-accent/90 bg-accent/10 px-1 rounded border border-accent/30">Phase 6</span>
           </button>
 
-          <div className="group relative">
-            <button
-              disabled
-              className="px-3 py-1 rounded text-canvas-textMuted/60 hover:text-zinc-500 cursor-not-allowed flex items-center space-x-1"
-            >
-              <span>Steganalysis</span>
-              <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">Phase 8</span>
-            </button>
-          </div>
+          <button
+            onClick={() => onSelectTab('steganalysis')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'steganalysis'
+                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-accent" />
+            <span>Steganalysis</span>
+            <span className="text-[10px] text-accent/90 bg-accent/10 px-1 rounded border border-accent/30">Phase 7</span>
+          </button>
 
           <div className="group relative">
             <button

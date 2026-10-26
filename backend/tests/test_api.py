@@ -47,14 +47,14 @@ def test_health_endpoint(client):
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_6(client):
+def test_system_status_endpoint_phase_7(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 6
+    assert data["current_phase"] == 7
     assert "modules" in data
     
-    # Phase 1, 2, 3, 4, 5, and 6 modules are implemented
+    # Phase 1 through 7 modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
     assert data["modules"]["payload_codec"]["status"] == "implemented"
@@ -66,8 +66,10 @@ def test_system_status_endpoint_phase_6(client):
     assert len(data["modules"]["video_stego"]["capabilities"]) > 0
     assert data["modules"]["allocation"]["status"] == "implemented"
     assert len(data["modules"]["allocation"]["capabilities"]) > 0
-    # Future phases remain truthfully pending
-    assert data["modules"]["steganalysis"]["status"] == "pending"
+    assert data["modules"]["steganalysis"]["status"] == "implemented"
+    assert len(data["modules"]["steganalysis"]["capabilities"]) > 0
+    
+    # Future phase 8 remains truthfully pending
     assert data["modules"]["evaluation_lab"]["status"] == "pending"
 
 
@@ -700,4 +702,60 @@ class TestMultimodalAPIEndpoints:
         )
         assert bad_res.status_code == 400
         assert "authentication failed" in bad_res.json()["detail"].lower()
+
+
+class TestSteganalysisAPIEndpoints:
+    def test_steganalysis_dataset_generate_endpoint(self, client):
+        res = client.post(
+            "/api/steganalysis/dataset/generate",
+            json={"modality": "image", "model_type": "random_forest", "num_sources": 6}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) >= 1
+        assert data[0]["modality"] == "image"
+        assert data[0]["total_samples"] > 6
+        assert len(data[0]["feature_names"]) == 10
+
+    def test_steganalysis_dataset_summary_endpoint(self, client):
+        res = client.get("/api/steganalysis/dataset/summary")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) >= 1
+
+    def test_steganalysis_train_endpoint(self, client):
+        res = client.post(
+            "/api/steganalysis/train",
+            json={"modality": "image", "model_type": "random_forest", "num_sources": 8}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) >= 1
+        first = data[0]
+        assert first["modality"] == "image"
+        assert first["model_type"] == "random_forest"
+        assert "test_metrics" in first
+        assert "accuracy" in first["test_metrics"]
+        assert 0.0 <= first["test_metrics"]["accuracy"] <= 1.0
+
+    def test_steganalysis_models_list_endpoint(self, client):
+        res = client.get("/api/steganalysis/models")
+        assert res.status_code == 200
+        assert isinstance(res.json(), list)
+
+    def test_steganalysis_classify_endpoint(self, client):
+        img_bytes = make_test_png_bytes(width=64, height=64)
+        res = client.post(
+            "/api/steganalysis/classify",
+            files={"file": ("test_carrier.png", img_bytes, "image/png")},
+            data={"model_type": "random_forest"}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["modality"] == "image"
+        assert data["predicted_class"] in ("Cover", "Stego")
+        assert 0.0 <= data["stego_probability"] <= 1.0
+        assert "Notice" in data["disclaimer"]
+        assert len(data["feature_values"]) > 0
+
 

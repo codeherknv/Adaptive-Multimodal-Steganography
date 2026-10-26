@@ -10,6 +10,7 @@ import { TechnicalHealth } from './components/TechnicalHealth';
 import { Sender } from './pages/Sender';
 import { Receiver } from './pages/Receiver';
 import { MultimodalTriad } from './pages/MultimodalTriad';
+import { Steganalysis } from './pages/Steganalysis';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -101,6 +102,10 @@ export const App: React.FC = () => {
         {activeTab === 'triad' && (
           <MultimodalTriad />
         )}
+
+        {activeTab === 'steganalysis' && (
+          <Steganalysis />
+        )}
       </main>
 
       {/* Minimal Academic Footer */}
@@ -112,7 +117,7 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-3 text-[11px]">
             <span>FastAPI • React 18 • Pytest</span>
             <span>•</span>
-            <span className="text-emerald-500 font-medium">Phase 6 Multimodal Allocation & Orchestration Verified</span>
+            <span className="text-emerald-500 font-medium">Phase 7 ML Steganalysis & Detectability Verified</span>
           </div>
         </div>
       </footer>

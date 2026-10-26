@@ -472,3 +472,81 @@ class MultimodalExtractResponse(BaseModel):
     manifest: Optional[Dict[str, Any]] = None
     message: str = "Successfully authenticated, reassembled, and decrypted multimodal secret message."
 
+
+# ---------------------------------------------------------
+# Steganalysis & Detectability Schemas (Phase 7)
+# ---------------------------------------------------------
+
+class SteganalysisMetricsResponse(BaseModel):
+    """Performance evaluation metrics on held-out test data."""
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+    roc_auc: Optional[float] = None
+    true_positives: int
+    true_negatives: int
+    false_positives: int
+    false_negatives: int
+    total_samples: int
+    cover_count: int
+    stego_count: int
+    by_payload_category: Dict[str, Dict[str, float]]
+    by_allocation_strategy: Dict[str, Dict[str, float]]
+    limitations_note: str
+
+
+class SteganalysisDatasetSummaryResponse(BaseModel):
+    """Summary of a generated steganalysis dataset."""
+    modality: str
+    total_samples: int
+    cover_count: int
+    stego_count: int
+    sources_count: int
+    feature_count: int
+    feature_names: List[str]
+
+
+class SteganalysisTrainRequest(BaseModel):
+    """Parameters for training baseline steganalysis models."""
+    modality: Literal["all", "image", "audio", "video"] = Field(
+        "image",
+        description="Target modality to train ('all', 'image', 'audio', or 'video')"
+    )
+    model_type: Literal["random_forest", "logistic_regression"] = Field(
+        "random_forest",
+        description="Classifier architecture ('random_forest' or 'logistic_regression')"
+    )
+    num_sources: int = Field(
+        12,
+        ge=4,
+        le=50,
+        description="Number of procedural cover sources to generate (min 4 for group split)"
+    )
+
+
+class SteganalysisTrainResponse(BaseModel):
+    """Response returned upon training completion."""
+    modality: str
+    model_type: str
+    train_sources_count: int
+    test_sources_count: int
+    training_metrics: SteganalysisMetricsResponse
+    test_metrics: SteganalysisMetricsResponse
+    trained_at: str
+    message: str
+
+
+class SteganalysisClassifyResponse(BaseModel):
+    """Inference result for a single uploaded media carrier."""
+    modality: str
+    filename: str
+    predicted_label: int
+    predicted_class: str
+    stego_probability: float
+    confidence_percentage: float
+    model_type: str
+    feature_values: Dict[str, float]
+    disclaimer: str
+
+

@@ -69,6 +69,26 @@ from app.allocation.engine import (
     MultimodalEngineError,
     CarrierExtractionMismatchError,
 )
+from app.steganalysis.features import (
+    extract_image_features,
+    extract_audio_features,
+    extract_video_features,
+    FeatureExtractionError,
+)
+from app.steganalysis.dataset_generator import (
+    generate_modality_dataset,
+    SteganalysisDataset,
+)
+from app.steganalysis.trainer import (
+    train_steganalyzer,
+    load_steganalyzer,
+    TrainedSteganalyzer,
+)
+from app.steganalysis.classifier import (
+    classify_media_file,
+    detect_media_modality,
+    ClassificationResult,
+)
 from app.schemas import (
     HealthResponse,
     SystemStatusResponse,
@@ -96,6 +116,11 @@ from app.schemas import (
     MultimodalAnalyzeResponse,
     MultimodalEmbedResponse,
     MultimodalExtractResponse,
+    SteganalysisMetricsResponse,
+    SteganalysisDatasetSummaryResponse,
+    SteganalysisTrainRequest,
+    SteganalysisTrainResponse,
+    SteganalysisClassifyResponse,
 )
 
 router = APIRouter()
@@ -220,9 +245,17 @@ async def get_system_status() -> SystemStatusResponse:
         "steganalysis": ModuleStatus(
             name="ML Steganalysis Classifier",
             phase=7,
-            status="pending",
-            description="Cover vs. stego feature extraction and supervised classification baselines.",
-            capabilities=[]
+            status="implemented",
+            description="Supervised statistical artifact feature extraction, zero-leakage training, and detectability evaluation across Image, Audio, and Video.",
+            capabilities=[
+                "First- & Second-Order Statistical Artifact Extraction",
+                "Pairs of Values (PoV) & Difference Kurtosis Analysis",
+                "Zero-Leakage GroupShuffleSplit Partitioning",
+                "Random Forest & Logistic Regression Baseline Models",
+                "Held-Out Test Detectability Evaluation (ROC-AUC, F1, Recall)",
+                "Matched-Condition Strategy Comparison (Fixed vs. Adaptive)",
+                "Single-Carrier Live Classification & Probability Scoring"
+            ]
         ),
         "evaluation_lab": ModuleStatus(
             name="Evaluation & Benchmarking Laboratory",
@@ -236,7 +269,7 @@ async def get_system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         project_name=settings.PROJECT_NAME,
         version=settings.VERSION,
-        current_phase=6,
+        current_phase=7,
         modules=modules
     )
 
@@ -1169,4 +1202,196 @@ async def extract_payload_multimodal(
         manifest=ext_res.manifest,
         message="Successfully authenticated, reassembled, and decrypted multimodal secret message."
     )
+
+
+# ---------------------------------------------------------
+# ML Steganalysis & Detectability Endpoints (Phase 7)
+# ---------------------------------------------------------
+
+# In-memory dataset cache for snappy development & experiment evaluation
+_DATASET_CACHE: Dict[str, SteganalysisDataset] = {}
+
+
+@router.post(
+    "/steganalysis/dataset/generate",
+    response_model=List[SteganalysisDatasetSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Generate Labeled Steganalysis Dataset",
+    description="Synthesizes diverse cover and stego media across image, audio, and video with labeled sample metadata."
+)
+async def generate_steganalysis_dataset(
+    req: SteganalysisTrainRequest
+) -> List[SteganalysisDatasetSummaryResponse]:
+    target_modalities = ["image", "audio", "video"] if req.modality == "all" else [req.modality]
+    summaries = []
+
+    for m in target_modalities:
+        ds = generate_modality_dataset(m, num_sources=req.num_sources)
+        _DATASET_CACHE[m] = ds
+        d = ds.to_dict()
+        summaries.append(SteganalysisDatasetSummaryResponse(
+            modality=m,
+            total_samples=d["total_samples"],
+            cover_count=d["cover_count"],
+            stego_count=d["stego_count"],
+            sources_count=d["sources_count"],
+            feature_count=len(ds.feature_names),
+            feature_names=ds.feature_names,
+        ))
+
+    return summaries
+
+
+@router.get(
+    "/steganalysis/dataset/summary",
+    response_model=List[SteganalysisDatasetSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Steganalysis Dataset Summary",
+    description="Returns sample distribution and feature metadata for current cached datasets."
+)
+async def get_dataset_summary() -> List[SteganalysisDatasetSummaryResponse]:
+    modalities = ["image", "audio", "video"]
+    summaries = []
+
+    for m in modalities:
+        if m not in _DATASET_CACHE:
+            _DATASET_CACHE[m] = generate_modality_dataset(m, num_sources=10)
+        ds = _DATASET_CACHE[m]
+        d = ds.to_dict()
+        summaries.append(SteganalysisDatasetSummaryResponse(
+            modality=m,
+            total_samples=d["total_samples"],
+            cover_count=d["cover_count"],
+            stego_count=d["stego_count"],
+            sources_count=d["sources_count"],
+            feature_count=len(ds.feature_names),
+            feature_names=ds.feature_names,
+        ))
+
+    return summaries
+
+
+@router.post(
+    "/steganalysis/train",
+    response_model=List[SteganalysisTrainResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Train Baseline Steganalyzer Model",
+    description="Trains Random Forest or Logistic Regression with zero-leakage GroupShuffleSplit and evaluates detectability on held-out test data."
+)
+async def train_steganalysis_models(
+    req: SteganalysisTrainRequest
+) -> List[SteganalysisTrainResponse]:
+    target_modalities = ["image", "audio", "video"] if req.modality == "all" else [req.modality]
+    results = []
+
+    for m in target_modalities:
+        # Load or generate dataset
+        if m not in _DATASET_CACHE or len(_DATASET_CACHE[m].samples) < req.num_sources:
+            _DATASET_CACHE[m] = generate_modality_dataset(m, num_sources=req.num_sources)
+        ds = _DATASET_CACHE[m]
+
+        try:
+            analyzer = train_steganalyzer(
+                dataset=ds,
+                model_type=req.model_type,
+                test_size=0.25,
+                random_state=42,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Training failed for {m}: {str(e)}"
+            )
+
+        results.append(SteganalysisTrainResponse(
+            modality=m,
+            model_type=req.model_type,
+            train_sources_count=len(analyzer.train_sources),
+            test_sources_count=len(analyzer.test_sources),
+            training_metrics=SteganalysisMetricsResponse(**analyzer.training_metrics.to_dict()),
+            test_metrics=SteganalysisMetricsResponse(**analyzer.test_metrics.to_dict()),
+            trained_at=analyzer.trained_at,
+            message=f"{req.model_type.replace('_', ' ').title()} successfully trained for {m} with zero-leakage group split."
+        ))
+
+    return results
+
+
+@router.get(
+    "/steganalysis/models",
+    response_model=List[SteganalysisTrainResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List Trained Steganalyzer Models",
+    description="Returns available saved models and their out-of-sample held-out evaluation performance."
+)
+async def list_trained_models() -> List[SteganalysisTrainResponse]:
+    results = []
+    for m in ["image", "audio", "video"]:
+        for mtype in ["random_forest", "logistic_regression"]:
+            analyzer = load_steganalyzer(m, model_type=mtype)
+            if analyzer is not None:
+                results.append(SteganalysisTrainResponse(
+                    modality=m,
+                    model_type=mtype,
+                    train_sources_count=len(analyzer.train_sources),
+                    test_sources_count=len(analyzer.test_sources),
+                    training_metrics=SteganalysisMetricsResponse(**analyzer.training_metrics.to_dict()),
+                    test_metrics=SteganalysisMetricsResponse(**analyzer.test_metrics.to_dict()),
+                    trained_at=analyzer.trained_at,
+                    message="Model loaded from disk."
+                ))
+    return results
+
+
+@router.post(
+    "/steganalysis/classify",
+    response_model=SteganalysisClassifyResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Classify Media File (Cover vs. Stego)",
+    description="Extracts statistical artifact features from an uploaded PNG, WAV, or AVI file and predicts Cover vs. Stego class."
+)
+async def classify_single_media_file(
+    file: UploadFile = File(..., description="Uploaded media carrier (PNG, WAV, or AVI)"),
+    model_type: Literal["random_forest", "logistic_regression"] = Form(
+        "random_forest",
+        description="Classifier architecture ('random_forest' or 'logistic_regression')"
+    )
+) -> SteganalysisClassifyResponse:
+    contents = await file.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum limit of {settings.MAX_UPLOAD_SIZE_BYTES} bytes."
+        )
+
+    filename = file.filename or "uploaded_media"
+    try:
+        result = classify_media_file(
+            file_bytes=contents,
+            filename=filename,
+            model_type=model_type,
+        )
+    except FeatureExtractionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Feature extraction failed: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Steganalysis inference failed: {str(e)}"
+        )
+
+    return SteganalysisClassifyResponse(
+        modality=result.modality,
+        filename=result.filename,
+        predicted_label=result.predicted_label,
+        predicted_class=result.predicted_class,
+        stego_probability=result.stego_probability,
+        confidence_percentage=result.confidence_percentage,
+        model_type=result.model_type,
+        feature_values=result.feature_values,
+        disclaimer=result.disclaimer,
+    )
+
 

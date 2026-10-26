@@ -311,3 +311,65 @@ export interface MultimodalExtractResponse {
   message: string;
 }
 
+// ---------------------------------------------------------
+// Steganalysis & Detectability Types (Phase 7)
+// ---------------------------------------------------------
+
+export interface SteganalysisMetrics {
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1_score: number;
+  roc_auc: number | null;
+  true_positives: number;
+  true_negatives: number;
+  false_positives: number;
+  false_negatives: number;
+  total_samples: number;
+  cover_count: number;
+  stego_count: number;
+  by_payload_category: Record<string, { sample_count: number; stego_detection_rate: number }>;
+  by_allocation_strategy: Record<string, { sample_count: number; stego_detection_rate: number }>;
+  limitations_note: string;
+}
+
+export interface SteganalysisDatasetSummary {
+  modality: 'image' | 'audio' | 'video';
+  total_samples: number;
+  cover_count: number;
+  stego_count: number;
+  sources_count: number;
+  feature_count: number;
+  feature_names: string[];
+}
+
+export interface SteganalysisTrainRequest {
+  modality: 'all' | 'image' | 'audio' | 'video';
+  model_type: 'random_forest' | 'logistic_regression';
+  num_sources: number;
+}
+
+export interface SteganalysisTrainResponse {
+  modality: string;
+  model_type: string;
+  train_sources_count: number;
+  test_sources_count: number;
+  training_metrics: SteganalysisMetrics;
+  test_metrics: SteganalysisMetrics;
+  trained_at: string;
+  message: string;
+}
+
+export interface SteganalysisClassifyResponse {
+  modality: string;
+  filename: string;
+  predicted_label: number;
+  predicted_class: 'Cover' | 'Stego';
+  stego_probability: number;
+  confidence_percentage: number;
+  model_type: string;
+  feature_values: Record<string, number>;
+  disclaimer: string;
+}
+
+

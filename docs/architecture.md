@@ -564,9 +564,101 @@ A payload of length $L$ can be embedded if and only if $\sum_{i=1}^3 M_i \ge L$.
 
 ---
 
-## 8. Test Execution & Verification
+## 8. Machine-Learning Steganalysis & Detectability Engine (Phase 7)
 
-To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, video stego, profiler, allocator, multimodal engine, and API routes):
+Phase 7 introduces machine-learning-based steganalysis detectors and a zero-data-leakage benchmark evaluation pipeline, located in `backend/app/steganalysis/`:
+
+### A. Statistical & Signal Feature Extraction (`features.py`)
+Extracts first- and higher-order statistical artifacts that signal LSB modification:
+
+1. **Image Modality (10 Features)**:
+   - `img_lsb_one_ratio`: Ratio of 1s in the LSB plane (diverges from cover baseline toward 0.5 under encrypted ciphertext).
+   - `img_pov_asymmetry`: Pairs of Values (PoV) asymmetry $|N(2k) - N(2k+1)| / (N(2k) + N(2k+1))$ across color channels.
+   - `img_horiz_diff_var`, `img_vert_diff_var`: Sample variance of horizontal and vertical spatial adjacent pixel differences.
+   - `img_diff_kurtosis`: Excess kurtosis of spatial differences (LSB replacement flattens the distribution peak).
+   - `img_highpass_residual_var`: Variance after applying a $3 \times 3$ Laplacian high-pass filter.
+   - `img_lsb_transition_rate`: Frequency of adjacent bit-flips along raster order in the LSB plane.
+   - `img_channel_diff_rg`, `img_channel_diff_gb`, `img_channel_diff_br`: Inter-channel covariance differences across color planes.
+
+2. **Audio Modality (8 Features)**:
+   - `aud_lsb_one_ratio`: Ratio of 1s in the 16-bit PCM sample LSB plane.
+   - `aud_pov_asymmetry`: Sample amplitude pair asymmetry.
+   - `aud_first_diff_var`, `aud_second_diff_var`: First and second order temporal difference variances.
+   - `aud_diff_kurtosis`: Sample difference kurtosis.
+   - `aud_highband_energy_ratio`: Ratio of high-frequency spectral energy to total acoustic energy.
+   - `aud_rms_energy`: Normalized root-mean-square audio energy.
+   - `aud_zero_crossing_rate`: Normalized zero-crossing rate of the audio waveform.
+
+3. **Video Modality (7 Features)**:
+   - `vid_lsb_one_ratio`: Average LSB 1-ratio across all sample frames.
+   - `vid_interframe_diff_var`: Variance of frame-to-frame pixel differences $(F_t - F_{t-1})$.
+   - `vid_interframe_diff_kurt`: Kurtosis of inter-frame residual errors.
+   - `vid_interframe_lsb_flip_rate`: Fraction of corresponding spatial pixels whose LSB toggles between consecutive frames.
+   - `vid_spatial_diff_var`: Intra-frame spatial horizontal difference variance averaged across frames.
+   - `vid_spatial_diff_kurt`: Intra-frame difference kurtosis.
+   - `vid_motion_energy`: Mean absolute frame-to-frame pixel difference.
+
+### B. Benchmark Dataset Generator & Zero-Leakage Splitting (`dataset_generator.py`)
+- **Procedural Synthesizers**: Deterministically generates diverse synthetic cover media (textures, gradients, sine chirps, moving geometric patterns).
+- **Label 0 (Cover)**: Original clean media instance with zero embedded payload.
+- **Label 1 (Stego)**: Stego media containing AES-256-GCM encrypted ASTG payload across Low (10%), Medium (35%), and High (55%) capacity fractions and Fixed vs Adaptive allocation strategies.
+- **Strict `source_id` Isolation**: Every base cover is assigned a persistent unique identifier (`img_src_001`). All stego derivatives share the identical `source_id`.
+- **Zero-Secret Guarantee**: Plaintext messages, symmetric encryption keys, and nonces are **never** stored in feature matrices or dataset records.
+
+### C. Leak-Free Model Training (`trainer.py`)
+- **GroupShuffleSplit**: Splits samples into training and testing partitions strictly grouped by `source_id`. Zero overlap between `train_sources` and `test_sources` is verified by runtime assertion.
+- **Preprocessing Isolation**: `StandardScaler` is fitted solely on `X_train` (`scaler.fit(X_train)`) and then applied to `X_test` via `scaler.transform(X_test)`.
+- **Model Baselines**:
+  - `RandomForestClassifier`: 100 estimators, max depth 6. Provides non-linear boundaries and feature importance rankings.
+  - `LogisticRegression`: L2-regularized linear model with balanced class weighting. Provides explainable linear decision boundaries.
+- **Evaluation Metrics**: Accuracy, Precision, Recall, F1-Score, ROC-AUC, 2x2 Confusion Matrix, and conditional detection breakdowns by payload category and allocation strategy.
+- **Persistence**: Fitted pipelines (`TrainedSteganalyzer`) are serialized to `outputs/models/{modality}_{model_type}.joblib`.
+
+### D. Single-File Live Inference (`classifier.py`)
+- Inspects uploaded files, identifies modality (PNG, WAV, AVI), extracts features, scores probability via the trained model, and includes explicit academic disclaimers.
+
+---
+
+## 9. Steganalysis API Endpoints (Phase 7)
+
+### 1. `POST /api/steganalysis/dataset/generate`
+- **Request**:
+  ```json
+  {
+    "modality": "image",
+    "num_sources": 10,
+    "payload_fractions": [0.10, 0.35, 0.55],
+    "allocation_strategies": ["fixed", "adaptive"]
+  }
+  ```
+- **Response**: Dataset summary including total samples, class distribution (Cover vs Stego), feature names, and source group counts.
+
+### 2. `GET /api/steganalysis/dataset/summary`
+- **Response**: Sample count breakdown for image, audio, and video datasets stored in the active cache.
+
+### 3. `POST /api/steganalysis/train`
+- **Request**:
+  ```json
+  {
+    "modality": "image",
+    "model_type": "random_forest",
+    "test_size": 0.30
+  }
+  ```
+- **Response**: Full `test_metrics` (accuracy, precision, recall, f1, roc_auc, confusion matrix, breakdown by payload category and allocation strategy), model artifact path, train/test source group counts.
+
+### 4. `GET /api/steganalysis/models`
+- **Response**: List of trained and persisted model checkpoints on disk with training metadata and evaluation summaries.
+
+### 5. `POST /api/steganalysis/classify`
+- **Request**: Multipart form data with `file` (PNG, WAV, or AVI) and optional `model_type` (`random_forest` or `logistic_regression`).
+- **Response**: `predicted_label` (0 or 1), `predicted_class` ("Cover" or "Stego"), `stego_probability` (0.0 to 1.0), `confidence_percentage`, full dictionary of extracted numerical features, and scientific disclaimer notice.
+
+---
+
+## 10. Test Execution & Verification
+
+To execute the complete automated test suite (including health, status, crypto, codec, image stego, audio stego, video stego, profiler, allocator, multimodal engine, steganalysis features, dataset generation, training pipeline, and API routes):
 
 ```powershell
 cd backend
@@ -574,4 +666,4 @@ cd backend
 pytest -v
 ```
 
-All **136 automated tests** pass with zero errors.
+All **156 automated tests** pass with zero errors.

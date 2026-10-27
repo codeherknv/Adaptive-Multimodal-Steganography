@@ -171,11 +171,8 @@ export const Receiver: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-canvas-border">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                Phase 5 Live
-              </span>
               <h1 className="text-base font-bold text-canvas-textPrimary tracking-tight">
-                Receiver: Multimodal Extraction & Authenticated Decryption
+                Receiver: Extraction & Authenticated Decryption
               </h1>
             </div>
             <p className="text-xs text-canvas-textMuted mt-1">

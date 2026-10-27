@@ -1,22 +1,14 @@
 import React from 'react';
-import { RefreshCw, Activity, Terminal, ArrowUpRight, ArrowDownLeft, Layers, ShieldAlert, Scale } from 'lucide-react';
-import { HealthResponse } from '../api/types';
-import { StatusBadge } from './StatusBadge';
+import { Terminal, ArrowUpRight, ArrowDownLeft, Layers } from 'lucide-react';
 
-export type TabType = 'overview' | 'sender' | 'receiver' | 'triad' | 'steganalysis' | 'evaluation';
+export type TabType = 'triad' | 'sender' | 'receiver';
 
 interface HeaderProps {
-  health: HealthResponse | null;
-  loading: boolean;
-  onRefresh: () => void;
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
-  health, 
-  loading, 
-  onRefresh, 
   activeTab, 
   onSelectTab 
 }) => {
@@ -30,80 +22,23 @@ export const Header: React.FC<HeaderProps> = ({
               <Terminal className="w-4 h-4 text-accent" />
             </div>
             <div className="flex items-baseline space-x-2">
-              <span className="font-mono text-xs font-semibold tracking-wider text-canvas-textPrimary uppercase">
-                Adaptive Stego Lab
-              </span>
-              <span className="text-[11px] font-mono text-canvas-textMuted hidden sm:inline">
-                / Phase 8 Live
+              <span className="font-mono text-sm font-semibold tracking-wider text-canvas-textPrimary uppercase">
+                Adaptive Steganography Workbench
               </span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2 text-xs font-mono">
-              <span className="text-canvas-textMuted hidden md:inline">API Gateway:</span>
-              {health ? (
-                <StatusBadge status={health.status} />
-              ) : (
-                <span className="text-[11px] font-mono text-zinc-500">Checking...</span>
-              )}
-            </div>
-
-            <button
-              onClick={onRefresh}
-              disabled={loading}
-              title="Ping Backend API"
-              className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-mono text-canvas-textSecondary bg-canvas-elevated hover:bg-zinc-800 border border-canvas-border hover:border-zinc-700 transition-colors disabled:opacity-40"
-            >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-accent' : ''}`} />
-              <span className="hidden sm:inline">Ping</span>
-            </button>
+          <div className="flex items-center space-x-2 text-xs font-mono text-canvas-textMuted hidden sm:flex">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Multimodal Research Platform</span>
           </div>
         </div>
 
-        {/* Compact Navigation Tabs */}
+        {/* Clean Navigation Tabs */}
         <div className="flex items-center space-x-1 overflow-x-auto py-1.5 -mb-px border-t border-canvas-borderSubtle text-xs font-mono scrollbar-none">
           <button
-            onClick={() => onSelectTab('overview')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'overview'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5 text-accent" />
-            <span>Overview & Status</span>
-          </button>
-
-          <button
-            onClick={() => onSelectTab('sender')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'sender'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
-          >
-            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Sender (Embed)</span>
-            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
-          </button>
-
-          <button
-            onClick={() => onSelectTab('receiver')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'receiver'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
-          >
-            <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Receiver (Extract)</span>
-            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Active</span>
-          </button>
-
-          <button
             onClick={() => onSelectTab('triad')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
               activeTab === 'triad'
                 ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
                 : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
@@ -111,44 +46,31 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Layers className="w-3.5 h-3.5 text-accent" />
             <span>Multimodal Triad</span>
-            <span className="text-[10px] text-accent/90 bg-accent/10 px-1 rounded border border-accent/30">Phase 6</span>
           </button>
 
           <button
-            onClick={() => onSelectTab('steganalysis')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'steganalysis'
+            onClick={() => onSelectTab('sender')}
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'sender'
                 ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
                 : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
             }`}
           >
-            <ShieldAlert className="w-3.5 h-3.5 text-accent" />
-            <span>Steganalysis</span>
-            <span className="text-[10px] text-accent/90 bg-accent/10 px-1 rounded border border-accent/30">Phase 7</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Sender (Embed)</span>
           </button>
 
           <button
-            onClick={() => onSelectTab('evaluation')}
-            className={`px-3 py-1 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'evaluation'
+            onClick={() => onSelectTab('receiver')}
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'receiver'
                 ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
                 : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
             }`}
           >
-            <Scale className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Evaluation Lab</span>
-            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/60 px-1 rounded border border-emerald-800/40">Phase 8</span>
+            <ArrowDownLeft className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Receiver (Extract)</span>
           </button>
-
-          <div className="group relative">
-            <button
-              disabled
-              className="px-3 py-1 rounded text-canvas-textMuted/60 hover:text-zinc-500 cursor-not-allowed flex items-center space-x-1"
-            >
-              <span>Methodology & Docs</span>
-              <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1 rounded border border-zinc-800">docs/</span>
-            </button>
-          </div>
         </div>
       </div>
     </header>

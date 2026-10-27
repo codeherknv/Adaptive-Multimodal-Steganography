@@ -88,10 +88,7 @@ export const Evaluation: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 font-semibold uppercase tracking-wider">
-                Phase 8 Research Validation
-              </span>
-              <span className="text-xs font-mono text-canvas-textMuted">
+              <span className="text-xs font-mono text-emerald-400 font-semibold uppercase tracking-wider">
                 Empirical Comparative Hypothesis Testing (Fixed vs. Adaptive)
               </span>
             </div>
@@ -166,7 +163,7 @@ export const Evaluation: React.FC = () => {
       {loading ? (
         <div className="rounded-lg border border-canvas-border bg-canvas-surface p-12 text-center font-mono space-y-3">
           <RefreshCw className="w-6 h-6 animate-spin text-accent mx-auto" />
-          <p className="text-xs text-zinc-400">Loading Phase 8 comparative evaluation results...</p>
+          <p className="text-xs text-zinc-400">Loading comparative evaluation results...</p>
         </div>
       ) : error ? (
         <div className="rounded-lg border border-red-800/40 bg-red-950/20 p-5 font-mono text-xs text-red-300 flex items-start space-x-3">

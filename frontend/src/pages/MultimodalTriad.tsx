@@ -194,10 +194,7 @@ export const MultimodalTriad: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/30 text-accent font-semibold uppercase tracking-wider">
-                Phase 6 Engine
-              </span>
-              <span className="text-xs font-mono text-canvas-textMuted">
+              <span className="text-xs font-mono text-accent font-semibold uppercase tracking-wider">
                 Multimodal Triad Allocation & Orchestration
               </span>
             </div>

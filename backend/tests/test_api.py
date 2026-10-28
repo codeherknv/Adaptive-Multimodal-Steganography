@@ -47,14 +47,14 @@ def test_health_endpoint(client):
     assert "secret" not in str(data).lower()
 
 
-def test_system_status_endpoint_phase_8(client):
+def test_system_status_endpoint(client):
     response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
-    assert data["current_phase"] == 8
+    assert data["current_phase"] == 6
     assert "modules" in data
     
-    # Phase 1 through 8 modules are implemented
+    # Core system modules are implemented
     assert data["modules"]["infrastructure"]["status"] == "implemented"
     assert data["modules"]["cryptography"]["status"] == "implemented"
     assert data["modules"]["payload_codec"]["status"] == "implemented"
@@ -66,10 +66,6 @@ def test_system_status_endpoint_phase_8(client):
     assert len(data["modules"]["video_stego"]["capabilities"]) > 0
     assert data["modules"]["allocation"]["status"] == "implemented"
     assert len(data["modules"]["allocation"]["capabilities"]) > 0
-    assert data["modules"]["steganalysis"]["status"] == "implemented"
-    assert len(data["modules"]["steganalysis"]["capabilities"]) > 0
-    assert data["modules"]["evaluation_lab"]["status"] == "implemented"
-    assert len(data["modules"]["evaluation_lab"]["capabilities"]) > 0
 
 
 class TestCryptoAPIEndpoints:
@@ -703,85 +699,7 @@ class TestMultimodalAPIEndpoints:
         assert "authentication failed" in bad_res.json()["detail"].lower()
 
 
-class TestSteganalysisAPIEndpoints:
-    def test_steganalysis_dataset_generate_endpoint(self, client):
-        res = client.post(
-            "/api/steganalysis/dataset/generate",
-            json={"modality": "image", "model_type": "random_forest", "num_sources": 6}
-        )
-        assert res.status_code == 200
-        data = res.json()
-        assert len(data) >= 1
-        assert data[0]["modality"] == "image"
-        assert data[0]["total_samples"] > 6
-        assert len(data[0]["feature_names"]) == 10
 
-    def test_steganalysis_dataset_summary_endpoint(self, client):
-        res = client.get("/api/steganalysis/dataset/summary")
-        assert res.status_code == 200
-        data = res.json()
-        assert len(data) >= 1
-
-    def test_steganalysis_train_endpoint(self, client):
-        res = client.post(
-            "/api/steganalysis/train",
-            json={"modality": "image", "model_type": "random_forest", "num_sources": 8}
-        )
-        assert res.status_code == 200
-        data = res.json()
-        assert len(data) >= 1
-        first = data[0]
-        assert first["modality"] == "image"
-        assert first["model_type"] == "random_forest"
-        assert "test_metrics" in first
-        assert "accuracy" in first["test_metrics"]
-        assert 0.0 <= first["test_metrics"]["accuracy"] <= 1.0
-
-    def test_steganalysis_models_list_endpoint(self, client):
-        res = client.get("/api/steganalysis/models")
-        assert res.status_code == 200
-        assert isinstance(res.json(), list)
-
-    def test_steganalysis_classify_endpoint(self, client):
-        img_bytes = make_test_png_bytes(width=64, height=64)
-        res = client.post(
-            "/api/steganalysis/classify",
-            files={"file": ("test_carrier.png", img_bytes, "image/png")},
-            data={"model_type": "random_forest"}
-        )
-        assert res.status_code == 200
-        data = res.json()
-        assert data["modality"] == "image"
-        assert data["predicted_class"] in ("Cover", "Stego")
-        assert 0.0 <= data["stego_probability"] <= 1.0
-        assert "Notice" in data["disclaimer"]
-        assert len(data["feature_values"]) > 0
-
-
-class TestComparativeEvaluationAPIEndpoints:
-    """Test suite for Phase 8 comparative evaluation API endpoints."""
-
-    def test_get_comparative_results_endpoint(self, client):
-        res = client.get("/api/evaluation/comparative-results")
-        assert res.status_code == 200
-        data = res.json()
-        assert "metadata" in data
-        assert "summary" in data
-        assert "trials" in data
-        assert "total_paired_trials" in data["summary"]
-        assert "metrics_summary" in data["summary"]
-
-    def test_run_comparative_evaluation_endpoint(self, client):
-        res = client.post(
-            "/api/evaluation/run",
-            json={"num_sources": 2, "use_real_media": False}
-        )
-        assert res.status_code == 200
-        data = res.json()
-        assert data["summary"]["total_sources_evaluated"] == 2
-        assert data["summary"]["total_paired_trials"] == 6  # 2 sources * 3 brackets
-        assert data["summary"]["fixed_recovery_rate"] == 1.0
-        assert data["summary"]["adaptive_recovery_rate"] == 1.0
 
 
 

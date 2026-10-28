@@ -18,12 +18,6 @@ import {
   MultimodalAnalyzeResponse,
   MultimodalEmbedResponse,
   MultimodalExtractResponse,
-  SteganalysisDatasetSummary,
-  SteganalysisTrainRequest,
-  SteganalysisTrainResponse,
-  SteganalysisClassifyResponse,
-  ComparativeEvaluationResponse,
-  ComparativeEvaluationRunRequest,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -208,59 +202,6 @@ export const extractMultimodal = async (
   const response = await apiClient.post<MultimodalExtractResponse>('/multimodal/extract', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return response.data;
-};
-
-// ---------------------------------------------------------
-// ML Steganalysis API (Phase 7)
-// ---------------------------------------------------------
-
-export const generateSteganalysisDataset = async (
-  req: SteganalysisTrainRequest
-): Promise<SteganalysisDatasetSummary[]> => {
-  const response = await apiClient.post<SteganalysisDatasetSummary[]>('/steganalysis/dataset/generate', req);
-  return response.data;
-};
-
-export const getSteganalysisDatasetSummary = async (): Promise<SteganalysisDatasetSummary[]> => {
-  const response = await apiClient.get<SteganalysisDatasetSummary[]>('/steganalysis/dataset/summary');
-  return response.data;
-};
-
-export const trainSteganalyzers = async (
-  req: SteganalysisTrainRequest
-): Promise<SteganalysisTrainResponse[]> => {
-  const response = await apiClient.post<SteganalysisTrainResponse[]>('/steganalysis/train', req);
-  return response.data;
-};
-
-export const listTrainedSteganalyzers = async (): Promise<SteganalysisTrainResponse[]> => {
-  const response = await apiClient.get<SteganalysisTrainResponse[]>('/steganalysis/models');
-  return response.data;
-};
-
-export const classifyMediaFile = async (
-  formData: FormData
-): Promise<SteganalysisClassifyResponse> => {
-  const response = await apiClient.post<SteganalysisClassifyResponse>('/steganalysis/classify', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return response.data;
-};
-
-// ---------------------------------------------------------
-// Comparative Evaluation & Research Validation API (Phase 8)
-// ---------------------------------------------------------
-
-export const getComparativeEvaluationResults = async (): Promise<ComparativeEvaluationResponse> => {
-  const response = await apiClient.get<ComparativeEvaluationResponse>('/evaluation/comparative-results');
-  return response.data;
-};
-
-export const runComparativeEvaluation = async (
-  req: ComparativeEvaluationRunRequest
-): Promise<ComparativeEvaluationResponse> => {
-  const response = await apiClient.post<ComparativeEvaluationResponse>('/evaluation/run', req);
   return response.data;
 };
 

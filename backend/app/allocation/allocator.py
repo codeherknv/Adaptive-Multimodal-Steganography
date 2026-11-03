@@ -32,7 +32,7 @@ optimization models can drop in seamlessly.
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 import math
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from app.core.payload_codec import HEADER_SIZE as ASTG_HEADER_SIZE
 from app.allocation.profiler import MultimodalTriadProfile
@@ -490,14 +490,22 @@ class AdaptiveFeatureStrategy(BaseAllocationStrategy):
         )
 
 
-def get_allocation_strategy(strategy_name: Literal["fixed", "adaptive"]) -> BaseAllocationStrategy:
+def get_allocation_strategy(
+    strategy_name: Union[str, Literal["fixed", "adaptive", "portfolio"]],
+    **kwargs: Any
+) -> BaseAllocationStrategy:
     """Factory function resolving strategy identifier to its implementation."""
-    clean_name = strategy_name.strip().lower()
+    clean_name = str(strategy_name).strip().lower()
     if clean_name == "fixed":
         return FixedBaselineStrategy()
     elif clean_name == "adaptive":
         return AdaptiveFeatureStrategy()
+    elif clean_name in ("portfolio", "risk_portfolio", "markowitz"):
+        from app.allocation.risk_portfolio import RiskPortfolioStrategy
+        risk_tol = kwargs.get("risk_tolerance", 0.5)
+        cov_mat = kwargs.get("covariance_matrix", None)
+        return RiskPortfolioStrategy(risk_tolerance=risk_tol, covariance_matrix=cov_mat)
     else:
         raise InvalidStrategyError(
-            f"Unknown allocation strategy '{strategy_name}'. Supported strategies: 'fixed', 'adaptive'."
+            f"Unknown allocation strategy '{strategy_name}'. Supported strategies: 'fixed', 'adaptive', 'portfolio'."
         )

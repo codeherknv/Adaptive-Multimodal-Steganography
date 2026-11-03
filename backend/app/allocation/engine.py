@@ -211,8 +211,9 @@ def embed_multimodal(
     password: Optional[str] = None,
     key_bytes: Optional[bytes] = None,
     salt_bytes: Optional[bytes] = None,
-    strategy_name: Literal["fixed", "adaptive"] = "adaptive",
+    strategy_name: Union[str, Literal["fixed", "adaptive", "portfolio"]] = "adaptive",
     weights_config: Optional[Dict[str, float]] = None,
+    risk_tolerance: Optional[float] = None,
 ) -> MultimodalEmbeddingResult:
     """Execute the end-to-end multimodal embedding pipeline across Image, Audio, and Video.
 
@@ -233,8 +234,9 @@ def embed_multimodal(
         password: Optional passphrase to derive AES-256 key.
         key_bytes: Optional direct 32-byte AES-256 key.
         salt_bytes: Optional salt for PBKDF2 derivation.
-        strategy_name: 'fixed' or 'adaptive' (default 'adaptive').
+        strategy_name: 'fixed', 'adaptive', or 'portfolio' (default 'adaptive').
         weights_config: Optional carrier weight tuning dictionary.
+        risk_tolerance: Optional risk tolerance lambda in [0, 1] for portfolio strategy.
 
     Returns:
         MultimodalEmbeddingResult containing stego carriers, zip bundle, metrics, and keys.
@@ -264,7 +266,10 @@ def embed_multimodal(
     triad_profile = profile_multimodal_triad(image_bytes, audio_bytes, video_bytes)
 
     # 3. Allocation Strategy
-    strategy = get_allocation_strategy(strategy_name)
+    alloc_kwargs: Dict[str, Any] = {}
+    if risk_tolerance is not None:
+        alloc_kwargs["risk_tolerance"] = risk_tolerance
+    strategy = get_allocation_strategy(strategy_name, **alloc_kwargs)
     plan = strategy.allocate(
         payload_len=len(envelope_bytes),
         triad_profile=triad_profile,

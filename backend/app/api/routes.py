@@ -208,11 +208,12 @@ async def get_system_status() -> SystemStatusResponse:
             name="Payload Allocation Engine",
             phase=6,
             status="implemented",
-            description="Fixed baseline and entropy-weighted adaptive allocation across Image, Audio, and Video.",
+            description="Fixed baseline, entropy-weighted adaptive, and Markowitz risk-portfolio allocation across Image, Audio, and Video.",
             capabilities=[
                 "Multimodal Carrier Profiling (Laplacian, RMS, Motion Variance)",
                 "Fixed Equal-Split Allocation with Overflow Water-Filling",
                 "Adaptive Feature-Weighted Rate-Distortion Optimization",
+                "Markowitz Risk-Portfolio (Mean-Variance) Quadratic Allocation",
                 "ASTG Chunk Slicing & Header Capacity Accounting",
                 "Unified Triad Embedding & Zip Bundling",
                 "Cross-Carrier Consistent Reassembly & AES-256-GCM Verification"
@@ -889,7 +890,8 @@ async def analyze_multimodal_triad(
     audio: UploadFile = File(..., description="Candidate WAV audio file"),
     video: UploadFile = File(..., description="Candidate AVI video file"),
     payload_length: Optional[int] = Form(None, description="Optional simulated payload length in bytes"),
-    strategy: Literal["fixed", "adaptive"] = Form("adaptive", description="Simulated allocation strategy")
+    strategy: Literal["fixed", "adaptive", "portfolio"] = Form("adaptive", description="Simulated allocation strategy"),
+    risk_tolerance: Optional[float] = Form(0.5, ge=0.0, le=1.0, description="Risk tolerance parameter lambda for portfolio strategy (0.0=min variance, 1.0=proportional)")
 ) -> MultimodalAnalyzeResponse:
     # 1. Read files
     img_bytes = await image.read()
@@ -918,7 +920,10 @@ async def analyze_multimodal_triad(
     simulated = None
     if payload_length is not None and payload_length > 0:
         try:
-            alloc_strategy = get_allocation_strategy(strategy)
+            alloc_kwargs: Dict[str, Any] = {}
+            if risk_tolerance is not None:
+                alloc_kwargs["risk_tolerance"] = risk_tolerance
+            alloc_strategy = get_allocation_strategy(strategy, **alloc_kwargs)
             sim_plan = alloc_strategy.allocate(payload_length, triad_profile)
             simulated = sim_plan.to_dict()
         except MultimodalCapacityExceededError as e:
@@ -946,7 +951,8 @@ async def analyze_multimodal_triad(
 )
 async def embed_payload_multimodal(
     message: str = Form(..., max_length=1_000_000, description="Secret message text to conceal"),
-    strategy: Literal["fixed", "adaptive"] = Form("adaptive", description="Allocation strategy ('fixed' or 'adaptive')"),
+    strategy: Literal["fixed", "adaptive", "portfolio"] = Form("adaptive", description="Allocation strategy ('fixed', 'adaptive', or 'portfolio')"),
+    risk_tolerance: Optional[float] = Form(0.5, ge=0.0, le=1.0, description="Risk tolerance parameter lambda for portfolio strategy (0.0=min variance, 1.0=proportional)"),
     password: Optional[str] = Form(None, min_length=1, max_length=1024, description="Optional passphrase for key derivation"),
     key: Optional[str] = Form(None, description="Optional 32-byte AES key (base64 or hex)"),
     salt: Optional[str] = Form(None, description="Optional salt for password derivation"),
@@ -1001,6 +1007,7 @@ async def embed_payload_multimodal(
             key_bytes=key_bytes,
             salt_bytes=salt_bytes,
             strategy_name=strategy,
+            risk_tolerance=risk_tolerance,
         )
     except MultimodalCapacityExceededError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

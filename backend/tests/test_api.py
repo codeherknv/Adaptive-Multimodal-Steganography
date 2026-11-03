@@ -698,6 +698,59 @@ class TestMultimodalAPIEndpoints:
         assert bad_res.status_code == 400
         assert "authentication failed" in bad_res.json()["detail"].lower()
 
+    def test_multimodal_portfolio_strategy_analyze_and_embed(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        # 1. Analyze with portfolio strategy and risk_tolerance
+        analyze_res = client.post(
+            "/api/multimodal/analyze",
+            files={
+                "image": ("c.png", img_b, "image/png"),
+                "audio": ("c.wav", aud_b, "audio/wav"),
+                "video": ("c.avi", vid_b, "video/x-msvideo"),
+            },
+            data={"payload_length": "150", "strategy": "portfolio", "risk_tolerance": "0.3"}
+        )
+        assert analyze_res.status_code == 200
+        sim = analyze_res.json()["simulated_allocation"]
+        assert sim["strategy_name"] == "portfolio"
+        assert sim["total_payload_bytes"] == 150
+
+        # 2. Embed with portfolio strategy and risk_tolerance
+        secret_msg = "Portfolio Markowitz Steganography Verification"
+        embed_res = client.post(
+            "/api/multimodal/embed",
+            files={
+                "image": ("c.png", img_b, "image/png"),
+                "audio": ("c.wav", aud_b, "audio/wav"),
+                "video": ("c.avi", vid_b, "video/x-msvideo"),
+            },
+            data={
+                "message": secret_msg,
+                "strategy": "portfolio",
+                "risk_tolerance": "0.7",
+                "password": "PortfolioSecretPassword42!",
+            }
+        )
+        assert embed_res.status_code == 200
+        embed_data = embed_res.json()
+        assert embed_data["strategy"] == "portfolio"
+
+        # 3. Extract and verify lossless recovery
+        import base64
+        zip_bytes = base64.b64decode(embed_data["zip_bundle_data_url"].split(",", 1)[1])
+        extract_res = client.post(
+            "/api/multimodal/extract",
+            files={"bundle_zip": ("bundle.zip", zip_bytes, "application/zip")},
+            data={
+                "password": "PortfolioSecretPassword42!",
+                "salt": embed_data["salt"],
+            }
+        )
+        assert extract_res.status_code == 200
+        extract_data = extract_res.json()
+        assert extract_data["plaintext"] == secret_msg
+        assert extract_data["verified"] is True
+
 
 
 

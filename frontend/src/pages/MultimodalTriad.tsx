@@ -15,7 +15,8 @@ import {
   Check, 
   RefreshCw,
   Info,
-  Archive
+  Archive,
+  Sliders
 } from 'lucide-react';
 import { 
   analyzeMultimodalTriad, 
@@ -27,6 +28,7 @@ import {
   MultimodalEmbedResponse, 
   MultimodalExtractResponse 
 } from '../api/types';
+import { RiskPortfolioDashboard } from '../components/RiskPortfolioDashboard';
 
 export const MultimodalTriad: React.FC = () => {
   const [activeWorkflow, setActiveWorkflow] = useState<'embed' | 'extract'>('embed');
@@ -37,7 +39,8 @@ export const MultimodalTriad: React.FC = () => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [strategy, setStrategy] = useState<'adaptive' | 'fixed'>('adaptive');
+  const [strategy, setStrategy] = useState<'adaptive' | 'fixed' | 'portfolio'>('adaptive');
+  const [riskTolerance, setRiskTolerance] = useState<number>(0.5);
   
   // Profiling State
   const [profilingLoading, setProfilingLoading] = useState<boolean>(false);
@@ -69,11 +72,14 @@ export const MultimodalTriad: React.FC = () => {
   // -------------------------------------------------------------
   // Handlers: Profiling
   // -------------------------------------------------------------
-  const handleProfileCarriers = async () => {
+  const handleProfileCarriers = async (targetStrategy?: 'adaptive' | 'fixed' | 'portfolio', targetTolerance?: number) => {
     if (!imageFile || !audioFile || !videoFile) {
       setProfilingError('Please upload all three cover carriers (PNG Image, WAV Audio, and Video) to profile.');
       return;
     }
+
+    const currentStrat = targetStrategy ?? strategy;
+    const currentTol = targetTolerance ?? riskTolerance;
 
     setProfilingLoading(true);
     setProfilingError(null);
@@ -82,11 +88,14 @@ export const MultimodalTriad: React.FC = () => {
       formData.append('image', imageFile);
       formData.append('audio', audioFile);
       formData.append('video', videoFile);
+      formData.append('strategy', currentStrat);
+      if (currentStrat === 'portfolio') {
+        formData.append('risk_tolerance', currentTol.toString());
+      }
       if (message.trim().length > 0) {
         // Approximate envelope size: plaintext bytes + 30 bytes AES-GCM envelope
         const estLen = new TextEncoder().encode(message).length + 30;
         formData.append('payload_length', estLen.toString());
-        formData.append('strategy', strategy);
       }
       const data = await analyzeMultimodalTriad(formData);
       setProfileData(data);
@@ -122,6 +131,9 @@ export const MultimodalTriad: React.FC = () => {
       formData.append('video', videoFile);
       formData.append('message', message);
       formData.append('strategy', strategy);
+      if (strategy === 'portfolio') {
+        formData.append('risk_tolerance', riskTolerance.toString());
+      }
       if (password.trim()) {
         formData.append('password', password);
       }
@@ -254,7 +266,7 @@ export const MultimodalTriad: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={handleProfileCarriers}
+                  onClick={() => handleProfileCarriers()}
                   disabled={!imageFile || !audioFile || !videoFile || profilingLoading}
                   className="inline-flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-mono bg-canvas-elevated hover:bg-zinc-800 border border-canvas-border text-canvas-textSecondary disabled:opacity-40 transition-colors"
                 >
@@ -431,6 +443,25 @@ export const MultimodalTriad: React.FC = () => {
                       They serve as heuristic allocation weights, not proof of undetectability against ML steganalysis classifiers.
                     </span>
                   </div>
+
+                  {/* Portfolio Risk Dashboard (when strategy is portfolio and metadata is present) */}
+                  {strategy === 'portfolio' && (profileData.simulated_allocation?.portfolio_metadata || profileData.portfolio_metadata) && (
+                    <div className="pt-2">
+                      <RiskPortfolioDashboard
+                        portfolioMetadata={profileData.simulated_allocation?.portfolio_metadata || profileData.portfolio_metadata}
+                        totalPayloadBytes={profileData.simulated_allocation?.total_payload_bytes}
+                        allocations={profileData.simulated_allocation?.allocations}
+                        riskTolerance={riskTolerance}
+                        onRiskToleranceChange={(newTol) => {
+                          setRiskTolerance(newTol);
+                          if (imageFile && audioFile && videoFile) {
+                            handleProfileCarriers('portfolio', newTol);
+                          }
+                        }}
+                        isSimulated={true}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -464,17 +495,27 @@ export const MultimodalTriad: React.FC = () => {
                 />
               </div>
 
-              {/* Password & Strategy Selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Strategy Selection & Risk Tolerance */}
+              <div className="space-y-4">
                 {/* Strategy Selector */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-zinc-300 font-medium block">
-                    Allocation Strategy
-                  </label>
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-mono text-zinc-300 font-medium block">
+                      Allocation Strategy
+                    </label>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      3 Distinct Mathematical Approaches
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
                     <button
                       type="button"
-                      onClick={() => setStrategy('adaptive')}
+                      onClick={() => {
+                        setStrategy('adaptive');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('adaptive');
+                        }
+                      }}
                       className={`p-2.5 rounded border text-left transition-colors ${
                         strategy === 'adaptive'
                           ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
@@ -487,7 +528,12 @@ export const MultimodalTriad: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => setStrategy('fixed')}
+                      onClick={() => {
+                        setStrategy('fixed');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('fixed');
+                        }
+                      }}
                       className={`p-2.5 rounded border text-left transition-colors ${
                         strategy === 'fixed'
                           ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
@@ -497,8 +543,84 @@ export const MultimodalTriad: React.FC = () => {
                       <div className="font-bold text-zinc-300">Fixed Baseline</div>
                       <div className="text-[10px] text-zinc-500 mt-0.5 leading-tight">Equal split + Water-filling</div>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('portfolio');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('portfolio', riskTolerance);
+                        }
+                      }}
+                      className={`p-2.5 rounded border text-left transition-colors ${
+                        strategy === 'portfolio'
+                          ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
+                          : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-300'
+                      }`}
+                    >
+                      <div className="font-bold text-sky-400 flex items-center justify-between">
+                        <span>Portfolio (Markowitz)</span>
+                        <span className="text-[9px] bg-sky-950 text-sky-300 px-1 py-0.2 rounded border border-sky-800/60 uppercase">QP</span>
+                      </div>
+                      <div className="text-[10px] text-zinc-500 mt-0.5 leading-tight">Mean-Variance Optimization</div>
+                    </button>
                   </div>
                 </div>
+
+                {/* Risk-Tolerance Slider (Visible ONLY when strategy === 'portfolio') */}
+                {strategy === 'portfolio' && (
+                  <div className="rounded border border-sky-900/40 bg-sky-950/15 p-4 space-y-3 font-mono text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div className="flex items-center space-x-2">
+                        <Sliders className="w-4 h-4 text-accent" />
+                        <label htmlFor="risk-tolerance-slider" className="text-zinc-200 font-semibold">
+                          Risk Tolerance Parameter (&lambda; = {riskTolerance.toFixed(2)})
+                        </label>
+                      </div>
+                      <span className="text-[10px] text-zinc-400">
+                        Range: 0.00 (Stealth / Min-Variance) &rarr; 1.00 (Capacity Proportional)
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <input
+                        id="risk-tolerance-slider"
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={riskTolerance}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setRiskTolerance(val);
+                        }}
+                        onMouseUp={() => {
+                          if (profileData && imageFile && audioFile && videoFile) {
+                            handleProfileCarriers('portfolio', riskTolerance);
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (profileData && imageFile && audioFile && videoFile) {
+                            handleProfileCarriers('portfolio', riskTolerance);
+                          }
+                        }}
+                        className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-400"
+                      />
+                      <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
+                        <span>0.0 (Min Variance)</span>
+                        <span>0.5 (Balanced Trade-Off)</span>
+                        <span>1.0 (Capacity Proportional)</span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400 leading-relaxed border-t border-sky-900/30 pt-2">
+                      <strong>Trade-Off Description:</strong> This parameter calibrates the convex objective:{' '}
+                      <code className="text-accent">(1 - &lambda;) &middot; V_norm(x) + &lambda; &middot; D_norm(x)</code>.
+                      Lower &lambda; penalizes allocation into low-complexity/noisy carriers regardless of capacity;
+                      higher &lambda; prioritizes balanced carrier capacity utilization.
+                    </p>
+                  </div>
+                )}
 
                 {/* Password Input */}
                 <div className="space-y-1.5">
@@ -614,6 +736,19 @@ export const MultimodalTriad: React.FC = () => {
                   </table>
                 </div>
               </div>
+
+              {/* Portfolio Risk Dashboard (when strategy is portfolio and metadata is present) */}
+              {embedResult.strategy === 'portfolio' && embedResult.portfolio_metadata && (
+                <div className="pt-2">
+                  <RiskPortfolioDashboard
+                    portfolioMetadata={embedResult.portfolio_metadata}
+                    totalPayloadBytes={embedResult.total_envelope_bytes}
+                    allocations={embedResult.allocations}
+                    riskTolerance={riskTolerance}
+                    isSimulated={false}
+                  />
+                </div>
+              )}
 
               {/* Fidelity & Distortion Metrics Grid */}
               <div className="space-y-2">

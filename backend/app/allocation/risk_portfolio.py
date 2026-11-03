@@ -691,6 +691,55 @@ class RiskPortfolioStrategy(BaseAllocationStrategy):
             sum(a.total_carrier_payload_bytes for a in allocations.values()) / total_usable_cap, 4
         ) if total_usable_cap > 0 else 0.0
 
+        # 5. Compute Efficient Frontier and Matched Comparison Points on Identical Inputs
+        frontier_pts = compute_efficient_frontier(triad_profile, num_points=12, sigma=sigma)
+        comparison_points: Dict[str, Any] = {}
+        if payload_len > 0:
+            try:
+                from app.allocation.allocator import FixedBaselineStrategy, AdaptiveFeatureStrategy
+                fixed_plan = FixedBaselineStrategy().allocate(payload_len, triad_profile)
+                adaptive_plan = AdaptiveFeatureStrategy().allocate(payload_len, triad_profile)
+
+                b_fix = np.array([fixed_plan.allocations[c].payload_bytes for c in CARRIER_ORDER], dtype=np.float64)
+                b_adp = np.array([adaptive_plan.allocations[c].payload_bytes for c in CARRIER_ORDER], dtype=np.float64)
+
+                var_fix = float(b_fix @ sigma @ b_fix)
+                var_adp = float(b_adp @ sigma @ b_adp)
+
+                denom = v_max - v_min if v_max > v_min else 1.0
+                rr_fix = float(np.clip((var_fix - v_min) / denom, 0.0, 1.0)) if v_max > v_min else 0.0
+                rr_adp = float(np.clip((var_adp - v_min) / denom, 0.0, 1.0)) if v_max > v_min else 0.0
+
+                comparison_points["fixed"] = {
+                    "strategy": "fixed",
+                    "allocations": {c: fixed_plan.allocations[c].payload_bytes for c in CARRIER_ORDER},
+                    "unnormalized_variance": round(var_fix, 4),
+                    "relative_risk": round(rr_fix, 4),
+                }
+                comparison_points["adaptive"] = {
+                    "strategy": "adaptive",
+                    "allocations": {c: adaptive_plan.allocations[c].payload_bytes for c in CARRIER_ORDER},
+                    "unnormalized_variance": round(var_adp, 4),
+                    "relative_risk": round(rr_adp, 4),
+                }
+            except Exception:
+                pass
+
+        portfolio_metadata: Dict[str, Any] = {
+            "risk_tolerance": risk_tol,
+            "relative_risk": round(relative_risk, 4),
+            "unnormalized_variance": round(raw_variance, 4),
+            "v_min": round(v_min, 4),
+            "v_max": round(v_max, 4),
+            "covariance_matrix": [[round(float(sigma[i, j]), 4) for j in range(3)] for i in range(3)],
+            "carrier_names": list(CARRIER_ORDER),
+            "was_regularized": val_result.was_regularized,
+            "original_min_eigenvalue": round(val_result.original_min_eigenvalue, 6),
+            "notes": val_result.notes,
+            "efficient_frontier": [pt.to_dict() for pt in frontier_pts],
+            "comparison_points": comparison_points,
+        }
+
         plan = AllocationPlan(
             strategy_name=self.strategy_name,
             total_payload_bytes=payload_len,
@@ -699,6 +748,7 @@ class RiskPortfolioStrategy(BaseAllocationStrategy):
             overall_utilization_ratio=overall_util,
             allocations=allocations,
             slice_offsets=slice_offsets,
+            portfolio_metadata=portfolio_metadata,
         )
 
         return plan

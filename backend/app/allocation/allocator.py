@@ -89,13 +89,14 @@ class AllocationPlan:
     """Complete allocation plan for the multimodal triad.
 
     Attributes:
-        strategy_name: 'fixed' or 'adaptive'.
+        strategy_name: 'fixed', 'adaptive', or 'portfolio'.
         total_payload_bytes: Total length of the encrypted envelope to distribute.
         total_usable_capacity_bytes: Total usable capacity across all 3 carriers.
         total_net_capacity_bytes: Usable capacity minus 3 * 34 bytes chunk overhead.
         overall_utilization_ratio: Total bytes embedded / total capacity.
         allocations: Dictionary mapping carrier_type to CarrierAllocation.
         slice_offsets: Dictionary mapping carrier_type to (start_idx, end_idx) byte range.
+        portfolio_metadata: Optional dictionary containing risk scores, covariance, and frontier.
     """
     strategy_name: str
     total_payload_bytes: int
@@ -104,9 +105,10 @@ class AllocationPlan:
     overall_utilization_ratio: float
     allocations: Dict[str, CarrierAllocation]
     slice_offsets: Dict[str, Tuple[int, int]]
+    portfolio_metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "strategy_name": self.strategy_name,
             "total_payload_bytes": self.total_payload_bytes,
             "total_usable_capacity_bytes": self.total_usable_capacity_bytes,
@@ -115,6 +117,9 @@ class AllocationPlan:
             "allocations": {k: v.to_dict() for k, v in self.allocations.items()},
             "slice_offsets": {k: list(v) for k, v in self.slice_offsets.items()},
         }
+        if self.portfolio_metadata is not None:
+            d["portfolio_metadata"] = self.portfolio_metadata
+        return d
 
 
 class BaseAllocationStrategy(ABC):

@@ -433,6 +433,7 @@ class MultimodalAnalyzeResponse(BaseModel):
     total_usable_capacity_bytes: int
     capacity_shares: Dict[str, float]
     simulated_allocation: Optional[Dict[str, Any]] = None
+    portfolio_metadata: Optional[Dict[str, Any]] = None
     message: str = "Multimodal carrier triad successfully profiled."
 
 
@@ -455,6 +456,7 @@ class MultimodalEmbedResponse(BaseModel):
     metrics: Dict[str, Any]
     preview_frame_data_url: str
     manifest: Dict[str, Any]
+    portfolio_metadata: Optional[Dict[str, Any]] = None
     message: str = Field(
         "Payload successfully partitioned, encrypted, and embedded across Image, Audio, and Video.",
         description="Status message."

@@ -916,8 +916,9 @@ async def analyze_multimodal_triad(
             detail=f"Carrier profiling failed: {str(e)}"
         )
 
-    # 3. Optional simulated allocation
+    # 3. Optional simulated allocation & portfolio metadata
     simulated = None
+    portfolio_meta = None
     if payload_length is not None and payload_length > 0:
         try:
             alloc_kwargs: Dict[str, Any] = {}
@@ -926,10 +927,36 @@ async def analyze_multimodal_triad(
             alloc_strategy = get_allocation_strategy(strategy, **alloc_kwargs)
             sim_plan = alloc_strategy.allocate(payload_length, triad_profile)
             simulated = sim_plan.to_dict()
+            if strategy == "portfolio" and sim_plan.portfolio_metadata:
+                portfolio_meta = sim_plan.portfolio_metadata
         except MultimodalCapacityExceededError as e:
             simulated = {"error": str(e), "exceeded": True}
         except AllocationError as e:
             simulated = {"error": str(e), "exceeded": True}
+    elif strategy == "portfolio":
+        from app.allocation.risk_portfolio import (
+            build_default_diagonal_covariance,
+            validate_and_regularize_covariance,
+            compute_efficient_frontier,
+            CARRIER_ORDER,
+        )
+        cov_raw = build_default_diagonal_covariance(triad_profile)
+        val_res = validate_and_regularize_covariance(cov_raw)
+        pts = compute_efficient_frontier(triad_profile, num_points=12, sigma=val_res.matrix)
+        portfolio_meta = {
+            "risk_tolerance": risk_tolerance if risk_tolerance is not None else 0.5,
+            "relative_risk": None,
+            "unnormalized_variance": None,
+            "v_min": None,
+            "v_max": None,
+            "covariance_matrix": [[round(float(val_res.matrix[i, j]), 4) for j in range(3)] for i in range(3)],
+            "carrier_names": list(CARRIER_ORDER),
+            "was_regularized": val_res.was_regularized,
+            "original_min_eigenvalue": round(val_res.original_min_eigenvalue, 6),
+            "notes": val_res.notes,
+            "efficient_frontier": [pt.to_dict() for pt in pts],
+            "comparison_points": {},
+        }
 
     return MultimodalAnalyzeResponse(
         image=ImageProfileResponse(**triad_profile.image.to_dict()),
@@ -938,6 +965,7 @@ async def analyze_multimodal_triad(
         total_usable_capacity_bytes=triad_profile.total_usable_capacity_bytes,
         capacity_shares=triad_profile.capacity_shares,
         simulated_allocation=simulated,
+        portfolio_metadata=portfolio_meta,
         message="Multimodal carrier triad successfully profiled."
     )
 
@@ -1062,6 +1090,7 @@ async def embed_payload_multimodal(
         metrics=metrics_consolidated,
         preview_frame_data_url=f"data:image/png;base64,{preview_b64}",
         manifest=res.manifest,
+        portfolio_metadata=res.allocation_plan.portfolio_metadata,
         message="Payload successfully partitioned, encrypted, and embedded across Image, Audio, and Video."
     )
 

@@ -711,9 +711,19 @@ class TestMultimodalAPIEndpoints:
             data={"payload_length": "150", "strategy": "portfolio", "risk_tolerance": "0.3"}
         )
         assert analyze_res.status_code == 200
-        sim = analyze_res.json()["simulated_allocation"]
+        analyze_data = analyze_res.json()
+        sim = analyze_data["simulated_allocation"]
         assert sim["strategy_name"] == "portfolio"
         assert sim["total_payload_bytes"] == 150
+        assert "portfolio_metadata" in analyze_data
+        port_meta = analyze_data["portfolio_metadata"]
+        assert port_meta is not None
+        assert "relative_risk" in port_meta
+        assert "covariance_matrix" in port_meta
+        assert "efficient_frontier" in port_meta
+        assert "comparison_points" in port_meta
+        assert "fixed" in port_meta["comparison_points"]
+        assert "adaptive" in port_meta["comparison_points"]
 
         # 2. Embed with portfolio strategy and risk_tolerance
         secret_msg = "Portfolio Markowitz Steganography Verification"
@@ -734,6 +744,12 @@ class TestMultimodalAPIEndpoints:
         assert embed_res.status_code == 200
         embed_data = embed_res.json()
         assert embed_data["strategy"] == "portfolio"
+        assert "portfolio_metadata" in embed_data
+        port_embed_meta = embed_data["portfolio_metadata"]
+        assert port_embed_meta is not None
+        assert "relative_risk" in port_embed_meta
+        assert "covariance_matrix" in port_embed_meta
+        assert "efficient_frontier" in port_embed_meta
 
         # 3. Extract and verify lossless recovery
         import base64
@@ -750,6 +766,25 @@ class TestMultimodalAPIEndpoints:
         extract_data = extract_res.json()
         assert extract_data["plaintext"] == secret_msg
         assert extract_data["verified"] is True
+
+    def test_multimodal_portfolio_strategy_analyze_without_payload(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        analyze_res = client.post(
+            "/api/multimodal/analyze",
+            files={
+                "image": ("c.png", img_b, "image/png"),
+                "audio": ("c.wav", aud_b, "audio/wav"),
+                "video": ("c.avi", vid_b, "video/x-msvideo"),
+            },
+            data={"strategy": "portfolio", "risk_tolerance": "0.4"}
+        )
+        assert analyze_res.status_code == 200
+        data = analyze_res.json()
+        assert data["simulated_allocation"] is None
+        assert data["portfolio_metadata"] is not None
+        assert len(data["portfolio_metadata"]["efficient_frontier"]) > 0
+        assert len(data["portfolio_metadata"]["covariance_matrix"]) == 3
+        assert data["portfolio_metadata"]["risk_tolerance"] == 0.4
 
 
 

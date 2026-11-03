@@ -255,6 +255,34 @@ export interface VideoProfile {
   complexity_score: number;
 }
 
+export interface EfficientFrontierPoint {
+  payload_bytes: number;
+  unnormalized_variance: number;
+  allocations: Record<string, number>;
+}
+
+export interface StrategyComparisonPoint {
+  strategy: 'fixed' | 'adaptive';
+  allocations: Record<string, number>;
+  unnormalized_variance: number;
+  relative_risk: number;
+}
+
+export interface PortfolioMetadata {
+  risk_tolerance: number;
+  relative_risk?: number | null;
+  unnormalized_variance?: number | null;
+  v_min?: number | null;
+  v_max?: number | null;
+  covariance_matrix: number[][];
+  carrier_names: string[];
+  was_regularized: boolean;
+  original_min_eigenvalue: number;
+  notes?: string;
+  efficient_frontier: EfficientFrontierPoint[];
+  comparison_points?: Record<string, StrategyComparisonPoint>;
+}
+
 export interface MultimodalAnalyzeResponse {
   image: ImageProfile;
   audio: AudioProfile;
@@ -262,6 +290,7 @@ export interface MultimodalAnalyzeResponse {
   total_usable_capacity_bytes: number;
   capacity_shares: Record<string, number>;
   simulated_allocation?: Record<string, any>;
+  portfolio_metadata?: PortfolioMetadata;
   message: string;
 }
 
@@ -297,6 +326,7 @@ export interface MultimodalEmbedResponse {
   };
   preview_frame_data_url: string;
   manifest: Record<string, any>;
+  portfolio_metadata?: PortfolioMetadata;
   message: string;
 }
 

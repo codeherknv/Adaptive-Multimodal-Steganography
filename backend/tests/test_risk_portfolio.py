@@ -339,6 +339,15 @@ class TestRiskPortfolioStrategy:
         assert not strat.last_validation_result.was_regularized
         assert 0.0 <= strat.last_relative_risk <= 1.0
 
+        # Check portfolio_metadata in plan
+        assert plan.portfolio_metadata is not None
+        assert "relative_risk" in plan.portfolio_metadata
+        assert "covariance_matrix" in plan.portfolio_metadata
+        assert "efficient_frontier" in plan.portfolio_metadata
+        assert "comparison_points" in plan.portfolio_metadata
+        assert "fixed" in plan.portfolio_metadata["comparison_points"]
+        assert "adaptive" in plan.portfolio_metadata["comparison_points"]
+
     def test_custom_asymmetric_covariance_handled_safely(self):
         triad = make_test_triad(img_cap=1000, aud_cap=1000, vid_cap=1000)
         # Supply asymmetric custom covariance

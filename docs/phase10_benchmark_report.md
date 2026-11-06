@@ -198,13 +198,17 @@ A critical question is whether Markowitz Portfolio gains are driven by the QP so
 
 ## 6. Robustness Under Lossy Channel Re-Encoding
 
-We evaluated stego carrier outputs after standard lossy transmission channel transformations:
-- **Image**: Re-compressed as JPEG at Quality $75$, then converted back to PNG container.
-- **Audio**: Quantized by masking 4 lower bits (simulating lossy audio compression / dither).
-- **Video**: Kept uncompressed or lossy encoded.
+We evaluated stego carrier outputs under lossy transmission channel transformations:
+- **Image**: Re-compressed as JPEG at Quality $75$, then re-opened and wrapped in a PNG container.
+- **Audio**: Re-quantized by zeroing the 4 lowest bits (simulating 12-bit / lossy dither channel noise).
+- **Video Re-Encoding Protocol & Specific Results**:
+  - In the initial automated run of the 36 robustness trials, lossy re-encoding was applied to Image and Audio, while the video carrier was preserved in its lossless/uncompressed state.
+  - We subsequently conducted an **isolated video lossy re-encoding test** using Motion-JPEG (`MJPG`) via OpenCV VideoWriter.
+  - **H.264 / AVC Status**: Native H.264 re-encoding was **not executed** because the OpenCV backend on this Windows host lacks the Cisco OpenH264 runtime binary (`libopenh264-win64.dll`, returning `Unable to create encoder / could not open codec libopenh264`). Therefore, **H.264 transform-quantization robustness remains untested**.
+  - **Specific Video Lossy Result (MJPG)**: Under `MJPG` compression, the 14-byte `VSTG` carrier framing header was completely corrupted (`CarrierExtractionError: Invalid video steganography signature: expected b'VSTG', got b"$\x96\xdb'"`), resulting in **0.0% decryption success** and **100% extraction failure**.
 
-### Results Across All 36 Matched Robustness Trials:
-- **Decryption Success Rate**: **$0.0\%$ (0 / 36 trials succeeded)**.
+### Results Across All Robustness Trials:
+- **Decryption Success Rate**: **$0.0\%$ (0 / 36 trials succeeded)** across all allocation strategies.
 - **Bit Error Rate (BER)**: Complete framing failure. The 14-byte PSTG carrier framing header and 34-byte ASTG packet header signatures were completely scrambled by JPEG DCT quantization.
 - **Scientific Takeaway**: Spatial and temporal LSB steganography is fundamentally fragile to lossy compression. Allocation strategies optimize cross-carrier distribution under lossless conditions, but offer zero protection against lossy transcoding. Robust multimodal steganography requires transform-domain embedding (e.g. DCT/DWT coefficient modulation).
 
@@ -216,9 +220,14 @@ In compliance with academic rigor:
 
 1. **Internal Proxy Objective Limitation**:
    The quadratic risk term $\mathbf{b}^T \boldsymbol{\Sigma} \mathbf{b}$ is constructed directly from the profiler's inverse complexity scores ($\Sigma_{ii} = 1 / CS_i^2$). It is an **internal mathematical proxy** designed to penalize loading low-entropy carriers. It does not constitute an empirical proof of stealth against external surveillance.
-2. **Absence of Deep-Learning Steganalyzers**:
-   This codebase does not include pre-trained deep neural network steganalyzers (e.g., SRNet, Xu-Net) or Spatial Rich Models (SRM). Instead, we evaluated independent statistical detectability via Westfeld's Chi-Square ($\chi^2$) Attack on Image Pairs of Values and sample-pair audio symmetry analysis.
-3. **Domain Restriction to LSB Embedding**:
+2. **Scope of Independent Detectability Tests**:
+   - The primary independent statistical detectability test executed across the full benchmark is **Westfeld's Chi-Square ($\chi^2$) Attack on Pairs of Values (PoVs), which strictly covers the Image carrier**.
+   - Audio and video detectability were analyzed via low-order LSB parity metrics (Audio sample-pair difference variance / $\chi^2$ and per-frame spatial $\chi^2$).
+   - **Out of Scope**: Advanced temporal video steganalysis (e.g. inter-frame optical flow / motion vector perturbation, 3D residual spatio-temporal models) and acoustic psychoacoustic/phase steganalysis were not implemented and remain out of scope for this study.
+   - **Absence of Deep-Learning Steganalyzers**: No deep convolutional neural network steganalysts (such as SRNet or Xu-Net) were trained or benchmarked.
+3. **Video Re-Encoding Codec Scope**:
+   - Video carrier lossy re-encoding was evaluated specifically with Motion-JPEG (`MJPG`). Modern inter-frame video codecs (H.264 / AVC, H.265 / HEVC) were not tested due to missing dynamic codec libraries on the host system.
+4. **Domain Restriction to LSB Embedding**:
    All tests utilize spatial/temporal least significant bit replacement. Results cannot be generalized to frequency-domain (DCT, DWT) or adaptive syndrome-trellis coding (STC) steganography without separate empirical benchmarking.
-4. **Concentration Trade-off**:
+5. **Concentration Trade-off**:
    In asymmetric cover environments, the minimum-variance objective ($\lambda = 0.00$) concentrates $>90\%$ of the transmission into the single most complex carrier. In operational scenarios, this concentration creates a single-point interception vulnerability.

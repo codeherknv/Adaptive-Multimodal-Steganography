@@ -171,9 +171,112 @@ def analyze_audio_sample_pairs(audio_bytes: bytes) -> Dict[str, float]:
     # Encrypted AES ciphertext has uniform 50.0% 1-bits.
     parity_bias = abs(lsb_one_ratio - 0.5)
 
+    # Audio Sample-Pair Histogram Chi-Square Attack
+    offset_s = samples.astype(np.int32) + 32768
+    hist, _ = np.histogram(offset_s, bins=65536, range=(0, 65536))
+    chi2_stat = 0.0
+    valid_pairs = 0
+    for k in range(32768):
+        c_even = hist[2 * k]
+        c_odd = hist[2 * k + 1]
+        pair_sum = c_even + c_odd
+        if pair_sum > 5:
+            expected = pair_sum / 2.0
+            diff = c_even - expected
+            chi2_stat += (diff ** 2) / expected
+            valid_pairs += 1
+
+    if valid_pairs > 1:
+        df = valid_pairs - 1
+        p_val = float(1.0 - chi2.cdf(chi2_stat, df))
+        p_val = max(0.0, min(1.0, p_val))
+    else:
+        df = 1
+        p_val = 1.0
+
     return {
         "lsb_one_ratio": round(lsb_one_ratio, 4),
         "sample_pair_diff_var": round(diff_var, 2),
         "second_diff_var": round(second_var, 2),
         "parity_bias": round(parity_bias, 4),
+        "audio_chi2_stat": round(float(chi2_stat), 3),
+        "audio_chi2_p_val": round(p_val, 4),
+        "audio_stego_prob": round(1.0 - p_val, 4),
+    }
+
+
+def analyze_video_per_frame_chi_square(video_bytes: bytes) -> Dict[str, float]:
+    """Execute per-frame Chi-Square (PoVs) steganalysis across all video frames.
+
+    Decodes each video frame and evaluates spatial LSB pair equalization independently.
+    Computes the mean frame Chi-square statistic, mean p-value, and the fraction
+    of video frames flagged as stego (p < 0.05).
+
+    Returns:
+        dict with:
+            video_mean_chi2_stat: float
+            video_mean_p_val: float
+            video_stego_prob: float
+            video_frames_detected_ratio: fraction of frames with p < 0.05
+    """
+    from app.media.video_stego import load_video_from_bytes
+
+    try:
+        frames, _ = load_video_from_bytes(video_bytes)
+    except Exception:
+        return {
+            "video_mean_chi2_stat": 0.0,
+            "video_mean_p_val": 1.0,
+            "video_stego_prob": 0.0,
+            "video_frames_detected_ratio": 0.0,
+        }
+
+    if not frames:
+        return {
+            "video_mean_chi2_stat": 0.0,
+            "video_mean_p_val": 1.0,
+            "video_stego_prob": 0.0,
+            "video_frames_detected_ratio": 0.0,
+        }
+
+    stats = []
+    p_vals = []
+    detected_count = 0
+
+    for f in frames:
+        flat = f.ravel()
+        hist, _ = np.histogram(flat, bins=256, range=(0, 256))
+        chi2_stat = 0.0
+        valid_pairs = 0
+        for k in range(128):
+            c_even = hist[2 * k]
+            c_odd = hist[2 * k + 1]
+            pair_sum = c_even + c_odd
+            if pair_sum > 5:
+                expected = pair_sum / 2.0
+                diff = c_even - expected
+                chi2_stat += (diff ** 2) / expected
+                valid_pairs += 1
+
+        if valid_pairs > 1:
+            df = valid_pairs - 1
+            p_val = float(1.0 - chi2.cdf(chi2_stat, df))
+            p_val = max(0.0, min(1.0, p_val))
+        else:
+            p_val = 1.0
+
+        stats.append(chi2_stat)
+        p_vals.append(p_val)
+        if p_val < 0.05:
+            detected_count += 1
+
+    mean_stat = float(np.mean(stats))
+    mean_pval = float(np.mean(p_vals))
+    det_ratio = float(detected_count / len(frames))
+
+    return {
+        "video_mean_chi2_stat": round(mean_stat, 3),
+        "video_mean_p_val": round(mean_pval, 4),
+        "video_stego_prob": round(1.0 - mean_pval, 4),
+        "video_frames_detected_ratio": round(det_ratio, 4),
     }

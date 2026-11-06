@@ -10,7 +10,9 @@ from app.metrics.detectability import (
     compute_carrier_embedding_rates,
     analyze_image_chi_square,
     analyze_audio_sample_pairs,
+    analyze_video_per_frame_chi_square,
 )
+from app.media.video_stego import save_video_to_bytes
 
 
 def test_carrier_embedding_rates():
@@ -67,4 +69,16 @@ def test_audio_sample_pairs():
     res = analyze_audio_sample_pairs(wav_bytes)
     assert "lsb_one_ratio" in res
     assert "sample_pair_diff_var" in res
+    assert "audio_chi2_p_val" in res
     assert 0.0 <= res["lsb_one_ratio"] <= 1.0
+
+
+def test_video_per_frame_chi_square():
+    frames = [np.random.randint(50, 200, (64, 64, 3), dtype=np.uint8) for _ in range(5)]
+    vid_bytes = save_video_to_bytes(frames, 25.0, 64, 64, 'FFV1', '.avi')
+
+    res = analyze_video_per_frame_chi_square(vid_bytes)
+    assert "video_mean_chi2_stat" in res
+    assert "video_mean_p_val" in res
+    assert "video_stego_prob" in res
+    assert 0.0 <= res["video_stego_prob"] <= 1.0

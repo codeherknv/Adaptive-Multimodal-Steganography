@@ -341,6 +341,40 @@ export interface MultimodalExtractResponse {
   message: string;
 }
 
+export interface StrategyComparisonRow {
+  strategy_key: string;
+  strategy_name: string;
+  lambda_param?: number | null;
+  is_novel: boolean;
+  b_image?: number | null;
+  b_audio?: number | null;
+  b_video?: number | null;
+  share_image_pct?: number | null;
+  share_audio_pct?: number | null;
+  share_video_pct?: number | null;
+  concentrated_over_90pct: boolean;
+  concentrated_carrier?: string | null;
+  image_psnr_db?: number | null;
+  audio_snr_db?: number | null;
+  video_psnr_db?: number | null;
+  modeled_risk_proxy?: number | null;
+  image_bpp?: number | null;
+  audio_bps?: number | null;
+  video_bppf?: number | null;
+  status: string;
+  error_message?: string | null;
+}
+
+export interface MultimodalCompareResponse {
+  total_net_capacity_bytes: number;
+  payload_bytes: number;
+  image_complexity_score: number;
+  audio_complexity_score: number;
+  video_complexity_score: number;
+  rows: StrategyComparisonRow[];
+  message: string;
+}
+
 
 
 

@@ -10,7 +10,7 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-canvas-base text-canvas-textPrimary flex flex-col font-sans selection:bg-accent/20 selection:text-white">
       {/* Top App Header & Clean Navigation */}
-      <Header 
+      <Header
         activeTab={activeTab}
         onSelectTab={setActiveTab}
       />
@@ -34,12 +34,9 @@ export const App: React.FC = () => {
       <footer className="border-t border-canvas-border bg-canvas-surface py-5 mt-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-canvas-textMuted font-mono gap-2">
           <div>
-            Reliability-Aware Adaptive Multimodal Steganography Research Platform
+            Multimodal Steganography Research Platform
           </div>
           <div className="flex items-center space-x-3 text-[11px]">
-            <span>FastAPI • React 18 • Pytest</span>
-            <span>•</span>
-            <span className="text-emerald-500 font-medium">Verified System</span>
           </div>
         </div>
       </footer>

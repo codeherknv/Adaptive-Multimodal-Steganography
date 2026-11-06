@@ -18,6 +18,7 @@ import {
   MultimodalAnalyzeResponse,
   MultimodalEmbedResponse,
   MultimodalExtractResponse,
+  MultimodalCompareResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -200,6 +201,15 @@ export const extractMultimodal = async (
   formData: FormData
 ): Promise<MultimodalExtractResponse> => {
   const response = await apiClient.post<MultimodalExtractResponse>('/multimodal/extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const compareMultimodalStrategies = async (
+  formData: FormData
+): Promise<MultimodalCompareResponse> => {
+  const response = await apiClient.post<MultimodalCompareResponse>('/multimodal/compare', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;

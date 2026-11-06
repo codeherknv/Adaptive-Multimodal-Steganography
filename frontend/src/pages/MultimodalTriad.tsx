@@ -1,37 +1,50 @@
 import React, { useState } from 'react';
-import { 
-  Key, 
-  Download, 
-  CheckCircle2, 
-  AlertCircle, 
-  Lock, 
-  Unlock, 
-  BarChart3, 
-  Cpu, 
-  Image as ImageIcon, 
-  Music, 
-  Video as VideoIcon, 
-  Copy, 
-  Check, 
+import {
+  Key,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
+  Unlock,
+  BarChart3,
+  Cpu,
+  Image as ImageIcon,
+  Music,
+  Video as VideoIcon,
+  Copy,
+  Check,
   RefreshCw,
   Info,
   Archive,
   Sliders
 } from 'lucide-react';
-import { 
-  analyzeMultimodalTriad, 
-  embedMultimodal, 
-  extractMultimodal 
+import {
+  analyzeMultimodalTriad,
+  embedMultimodal,
+  extractMultimodal,
+  compareMultimodalStrategies,
 } from '../api/client';
-import { 
-  MultimodalAnalyzeResponse, 
-  MultimodalEmbedResponse, 
-  MultimodalExtractResponse 
+import {
+  MultimodalAnalyzeResponse,
+  MultimodalEmbedResponse,
+  MultimodalExtractResponse,
+  MultimodalCompareResponse,
 } from '../api/types';
 import { RiskPortfolioDashboard } from '../components/RiskPortfolioDashboard';
+import { StrategyComparisonPanel } from '../components/StrategyComparisonPanel';
+
+export type AllocationStrategyKey =
+  | 'fixed'
+  | 'capacity_proportional'
+  | 'adaptive'
+  | 'square_root_law'
+  | 'random_key_seeded'
+  | 'max_complexity_greedy'
+  | 'minimax_risk'
+  | 'portfolio';
 
 export const MultimodalTriad: React.FC = () => {
-  const [activeWorkflow, setActiveWorkflow] = useState<'embed' | 'extract'>('embed');
+  const [activeWorkflow, setActiveWorkflow] = useState<'embed' | 'compare' | 'extract'>('embed');
 
   // Embed Mode State
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -39,9 +52,14 @@ export const MultimodalTriad: React.FC = () => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [strategy, setStrategy] = useState<'adaptive' | 'fixed' | 'portfolio'>('adaptive');
+  const [strategy, setStrategy] = useState<AllocationStrategyKey>('adaptive');
   const [riskTolerance, setRiskTolerance] = useState<number>(0.5);
-  
+
+  // Strategy Comparison State
+  const [compareLoading, setCompareLoading] = useState<boolean>(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [compareData, setCompareData] = useState<MultimodalCompareResponse | null>(null);
+
   // Profiling State
   const [profilingLoading, setProfilingLoading] = useState<boolean>(false);
   const [profileData, setProfileData] = useState<MultimodalAnalyzeResponse | null>(null);
@@ -72,7 +90,7 @@ export const MultimodalTriad: React.FC = () => {
   // -------------------------------------------------------------
   // Handlers: Profiling
   // -------------------------------------------------------------
-  const handleProfileCarriers = async (targetStrategy?: 'adaptive' | 'fixed' | 'portfolio', targetTolerance?: number) => {
+  const handleProfileCarriers = async (targetStrategy?: AllocationStrategyKey, targetTolerance?: number) => {
     if (!imageFile || !audioFile || !videoFile) {
       setProfilingError('Please upload all three cover carriers (PNG Image, WAV Audio, and Video) to profile.');
       return;
@@ -104,6 +122,42 @@ export const MultimodalTriad: React.FC = () => {
     } finally {
       setProfilingLoading(false);
     }
+  };
+
+  // -------------------------------------------------------------
+  // Handlers: Strategy Comparison
+  // -------------------------------------------------------------
+  const handleRunComparison = async () => {
+    if (!imageFile || !audioFile || !videoFile) {
+      setCompareError('Please upload all three cover carriers (PNG Image, WAV Audio, and Video) to compare strategies.');
+      return;
+    }
+
+    setCompareLoading(true);
+    setCompareError(null);
+    try {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      formData.append('audio', audioFile);
+      formData.append('video', videoFile);
+      if (message.trim().length > 0) {
+        formData.append('message', message);
+      }
+      const data = await compareMultimodalStrategies(formData);
+      setCompareData(data);
+    } catch (err: any) {
+      setCompareError(err.response?.data?.detail || err.message || 'Strategy comparison failed.');
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const handleSelectStrategyFromComparison = (stratKey: string, lambdaParam?: number) => {
+    setStrategy(stratKey as AllocationStrategyKey);
+    if (lambdaParam !== undefined && lambdaParam !== null) {
+      setRiskTolerance(lambdaParam);
+    }
+    setActiveWorkflow('embed');
   };
 
   // -------------------------------------------------------------
@@ -214,8 +268,7 @@ export const MultimodalTriad: React.FC = () => {
               Multimodal Triad Workbench
             </h1>
             <p className="text-xs sm:text-sm text-canvas-textSecondary max-w-3xl leading-relaxed">
-              Partition a cryptographically encrypted AES-256-GCM payload across heterogeneous carriers
-              (PNG Image, WAV Audio, FFV1 Video) using deterministic fixed or entropy-weighted adaptive strategies.
+              Partition an AES-256-GCM encrypted payload across heterogeneous carriers (PNG Image, WAV Audio, FFV1 Video) using eight allocation paradigms — from deterministic equal-split and capacity-proportional baselines, through entropy-weighted adaptive heuristics, to a novel constrained Markowitz mean-variance optimization that treats each carrier as a risk-bearing asset.
             </p>
           </div>
 
@@ -223,22 +276,35 @@ export const MultimodalTriad: React.FC = () => {
           <div className="inline-flex rounded-lg border border-canvas-border bg-canvas-elevated p-1 self-start sm:self-auto font-mono text-xs">
             <button
               onClick={() => setActiveWorkflow('embed')}
-              className={`px-3 py-1.5 rounded transition-colors flex items-center space-x-1.5 ${
-                activeWorkflow === 'embed'
-                  ? 'bg-zinc-800 text-canvas-textPrimary shadow-sm border border-zinc-700/60'
-                  : 'text-canvas-textMuted hover:text-canvas-textSecondary'
-              }`}
+              className={`px-3 py-1.5 rounded transition-colors flex items-center space-x-1.5 ${activeWorkflow === 'embed'
+                ? 'bg-zinc-800 text-canvas-textPrimary shadow-sm border border-zinc-700/60'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+                }`}
             >
               <Lock className="w-3.5 h-3.5 text-accent" />
               <span>Embed & Bundle</span>
             </button>
             <button
+              onClick={() => {
+                setActiveWorkflow('compare');
+                if (!compareData && imageFile && audioFile && videoFile) {
+                  handleRunComparison();
+                }
+              }}
+              className={`px-3 py-1.5 rounded transition-colors flex items-center space-x-1.5 ${activeWorkflow === 'compare'
+                ? 'bg-zinc-800 text-sky-400 shadow-sm border border-zinc-700/60'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+                }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-sky-400" />
+              <span>Strategy Comparison</span>
+            </button>
+            <button
               onClick={() => setActiveWorkflow('extract')}
-              className={`px-3 py-1.5 rounded transition-colors flex items-center space-x-1.5 ${
-                activeWorkflow === 'extract'
-                  ? 'bg-zinc-800 text-canvas-textPrimary shadow-sm border border-zinc-700/60'
-                  : 'text-canvas-textMuted hover:text-canvas-textSecondary'
-              }`}
+              className={`px-3 py-1.5 rounded transition-colors flex items-center space-x-1.5 ${activeWorkflow === 'extract'
+                ? 'bg-zinc-800 text-canvas-textPrimary shadow-sm border border-zinc-700/60'
+                : 'text-canvas-textMuted hover:text-canvas-textSecondary'
+                }`}
             >
               <Unlock className="w-3.5 h-3.5 text-emerald-400" />
               <span>Extract & Reassemble</span>
@@ -498,34 +564,18 @@ export const MultimodalTriad: React.FC = () => {
               {/* Strategy Selection & Risk Tolerance */}
               <div className="space-y-4">
                 {/* Strategy Selector */}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-mono text-zinc-300 font-medium block">
                       Allocation Strategy
                     </label>
                     <span className="text-[10px] font-mono text-zinc-500">
-                      3 Distinct Mathematical Approaches
+                      8 Distinct Mathematical Approaches
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStrategy('adaptive');
-                        if (profileData && imageFile && audioFile && videoFile) {
-                          handleProfileCarriers('adaptive');
-                        }
-                      }}
-                      className={`p-2.5 rounded border text-left transition-colors ${
-                        strategy === 'adaptive'
-                          ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
-                          : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-300'
-                      }`}
-                    >
-                      <div className="font-bold text-accent">Adaptive</div>
-                      <div className="text-[10px] text-zinc-500 mt-0.5 leading-tight">Feature & Capacity Weighted</div>
-                    </button>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs font-mono">
+                    {/* 1. Fixed Baseline */}
                     <button
                       type="button"
                       onClick={() => {
@@ -534,16 +584,140 @@ export const MultimodalTriad: React.FC = () => {
                           handleProfileCarriers('fixed');
                         }
                       }}
-                      className={`p-2.5 rounded border text-left transition-colors ${
-                        strategy === 'fixed'
-                          ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
-                          : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-300'
-                      }`}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'fixed'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
                     >
-                      <div className="font-bold text-zinc-300">Fixed Baseline</div>
-                      <div className="text-[10px] text-zinc-500 mt-0.5 leading-tight">Equal split + Water-filling</div>
+                      <div>
+                        <div className="font-bold text-zinc-200">Fixed Baseline</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Equal split + Water-filling</div>
+                      </div>
                     </button>
 
+                    {/* 2. Capacity-Proportional */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('capacity_proportional');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('capacity_proportional');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'capacity_proportional'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Capacity-Proportional</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Proportional to raw carrier capacity</div>
+                      </div>
+                    </button>
+
+                    {/* 3. Adaptive */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('adaptive');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('adaptive');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'adaptive'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Adaptive</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Feature & Capacity Weighted</div>
+                      </div>
+                    </button>
+
+                    {/* 4. Square-Root-Law */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('square_root_law');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('square_root_law');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'square_root_law'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Square-Root-Law</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Ker's sqrt(capacity) allocation</div>
+                      </div>
+                    </button>
+
+                    {/* 5. Random Key-Seeded */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('random_key_seeded');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('random_key_seeded');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'random_key_seeded'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Random Key-Seeded</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Cryptographic pseudo-random split</div>
+                      </div>
+
+                    </button>
+
+                    {/* 6. Max-Complexity Greedy */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('max_complexity_greedy');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('max_complexity_greedy');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'max_complexity_greedy'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Max-Complexity Greedy</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Saturates highest-complexity carrier first</div>
+                      </div>
+
+                    </button>
+
+                    {/* 7. Minimax Risk */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStrategy('minimax_risk');
+                        if (profileData && imageFile && audioFile && videoFile) {
+                          handleProfileCarriers('minimax_risk');
+                        }
+                      }}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between ${strategy === 'minimax_risk'
+                        ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm ring-1 ring-accent/30'
+                        : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                    >
+                      <div>
+                        <div className="font-bold text-zinc-200">Minimax Risk</div>
+                        <div className="text-[10px] text-zinc-500 mt-1 leading-snug">Minimizes the worst-case carrier risk</div>
+                      </div>
+                    </button>
+
+                    {/* 8. Portfolio (Markowitz) - NOVEL CONTRIBUTION */}
                     <button
                       type="button"
                       onClick={() => {
@@ -552,17 +726,41 @@ export const MultimodalTriad: React.FC = () => {
                           handleProfileCarriers('portfolio', riskTolerance);
                         }
                       }}
-                      className={`p-2.5 rounded border text-left transition-colors ${
-                        strategy === 'portfolio'
-                          ? 'border-accent bg-accent/10 text-zinc-200 font-semibold shadow-sm'
-                          : 'border-canvas-borderSubtle bg-canvas-elevated/60 text-zinc-400 hover:text-zinc-300'
-                      }`}
+                      className={`p-3 rounded border text-left transition-all flex flex-col justify-between relative overflow-hidden ${strategy === 'portfolio'
+                        ? 'border-sky-400 bg-sky-950/35 text-zinc-200 font-semibold shadow-md ring-1 ring-sky-400/50'
+                        : 'border-sky-800/50 bg-sky-950/15 text-zinc-300 hover:text-white hover:border-sky-600/60'
+                        }`}
                     >
-                      <div className="font-bold text-sky-400 flex items-center justify-between">
-                        <span>Portfolio (Markowitz)</span>
-                        <span className="text-[9px] bg-sky-950 text-sky-300 px-1 py-0.2 rounded border border-sky-800/60 uppercase">QP</span>
+                      <div>
+                        <div className="font-bold text-sky-400 flex items-center justify-between gap-1 flex-wrap">
+                          <span>Portfolio (Markowitz)</span>
+                          <div className="flex items-center space-x-1">
+
+
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-zinc-400 mt-1 leading-snug">Mean-Variance Optimization</div>
                       </div>
-                      <div className="text-[10px] text-zinc-500 mt-0.5 leading-tight">Mean-Variance Optimization</div>
+                    </button>
+                  </div>
+
+                  {/* Direct Link to Strategy Comparison */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-1 gap-2">
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      Want to inspect all 8 models side-by-side on this payload?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveWorkflow('compare');
+                        if (imageFile && audioFile && videoFile) {
+                          handleRunComparison();
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded border border-sky-800/60 bg-sky-950/30 text-sky-300 hover:bg-sky-900/40 hover:text-white transition-colors flex items-center space-x-1.5 font-semibold text-xs font-mono self-start sm:self-auto"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Compare All 8 Strategies</span>
                     </button>
                   </div>
                 </div>
@@ -843,6 +1041,139 @@ export const MultimodalTriad: React.FC = () => {
       )}
 
       {/* ========================================================= */}
+      {/* WORKFLOW: STRATEGY COMPARISON                             */}
+      {/* ========================================================= */}
+      {activeWorkflow === 'compare' && (
+        <div className="space-y-6">
+          {/* Quick Carrier & Payload Input Accordion/Card */}
+          <div className="rounded-lg border border-canvas-border bg-canvas-surface p-5 sm:p-6 space-y-4">
+            <div className="flex items-center space-x-2">
+              <span className="w-6 h-6 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 font-mono text-xs flex items-center justify-center font-bold">
+                1
+              </span>
+              <h2 className="text-sm font-semibold text-canvas-textPrimary font-mono uppercase tracking-wider">
+                Comparison Input Parameters (Synchronized with Steps 1 & 2)
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
+              {/* Image Input */}
+              <div className="rounded border border-canvas-borderSubtle bg-canvas-elevated/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-accent" />
+                    <span>Image Carrier (PNG)</span>
+                  </span>
+                  {imageFile && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                </div>
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setImageFile(f);
+                    setProfileData(null);
+                    setCompareData(null);
+                  }}
+                  className="block w-full text-xs font-mono text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-mono file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+                />
+                {imageFile && (
+                  <p className="text-[10px] text-zinc-400 truncate font-mono">
+                    {imageFile.name} ({(imageFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
+
+              {/* Audio Input */}
+              <div className="rounded border border-canvas-borderSubtle bg-canvas-elevated/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+                    <Music className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Audio Carrier (WAV)</span>
+                  </span>
+                  {audioFile && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                </div>
+                <input
+                  type="file"
+                  accept="audio/wav,audio/x-wav"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setAudioFile(f);
+                    setProfileData(null);
+                    setCompareData(null);
+                  }}
+                  className="block w-full text-xs font-mono text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-mono file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+                />
+                {audioFile && (
+                  <p className="text-[10px] text-zinc-400 truncate font-mono">
+                    {audioFile.name} ({(audioFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
+
+              {/* Video Input */}
+              <div className="rounded border border-canvas-borderSubtle bg-canvas-elevated/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+                    <VideoIcon className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Video Carrier (AVI/MKV)</span>
+                  </span>
+                  {videoFile && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                </div>
+                <input
+                  type="file"
+                  accept="video/x-msvideo,video/avi,video/x-matroska,.mkv,.avi"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setVideoFile(f);
+                    setProfileData(null);
+                    setCompareData(null);
+                  }}
+                  className="block w-full text-xs font-mono text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-mono file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+                />
+                {videoFile && (
+                  <p className="text-[10px] text-zinc-400 truncate font-mono">
+                    {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(2)} MB)
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Secret Message Input for Comparison */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex justify-between items-center text-xs font-mono">
+                <label htmlFor="compare-msg" className="text-zinc-300 font-medium">
+                  Plaintext Message / Target Payload for Simulation
+                </label>
+                <span className="text-zinc-500">{message.length} characters ({message ? (new TextEncoder().encode(message).length + 28) : 0} B)</span>
+              </div>
+              <textarea
+                id="compare-msg"
+                rows={2}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Enter secret message to evaluate real allocation sizes (or leave blank to evaluate default payload fraction)..."
+                className="w-full rounded border border-canvas-border bg-canvas-elevated/70 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+
+          {/* Strategy Comparison Panel with Recharts Bar Chart & Detailed Matrix */}
+          <StrategyComparisonPanel
+            imageFile={imageFile}
+            audioFile={audioFile}
+            videoFile={videoFile}
+            message={message}
+            compareData={compareData}
+            loading={compareLoading}
+            error={compareError}
+            onRunComparison={handleRunComparison}
+            onSelectStrategy={handleSelectStrategyFromComparison}
+          />
+        </div>
+      )}
+
+      {/* ========================================================= */}
       {/* WORKFLOW: EXTRACT & REASSEMBLE                            */}
       {/* ========================================================= */}
       {activeWorkflow === 'extract' && (
@@ -864,18 +1195,16 @@ export const MultimodalTriad: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setExtractMode('zip')}
-                    className={`px-2.5 py-1 rounded transition-colors ${
-                      extractMode === 'zip' ? 'bg-zinc-800 text-zinc-200 font-semibold' : 'text-zinc-400'
-                    }`}
+                    className={`px-2.5 py-1 rounded transition-colors ${extractMode === 'zip' ? 'bg-zinc-800 text-zinc-200 font-semibold' : 'text-zinc-400'
+                      }`}
                   >
                     ZIP Bundle Archive
                   </button>
                   <button
                     type="button"
                     onClick={() => setExtractMode('individual')}
-                    className={`px-2.5 py-1 rounded transition-colors ${
-                      extractMode === 'individual' ? 'bg-zinc-800 text-zinc-200 font-semibold' : 'text-zinc-400'
-                    }`}
+                    className={`px-2.5 py-1 rounded transition-colors ${extractMode === 'individual' ? 'bg-zinc-800 text-zinc-200 font-semibold' : 'text-zinc-400'
+                      }`}
                   >
                     Individual 3 Carriers
                   </button>

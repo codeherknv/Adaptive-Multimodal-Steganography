@@ -475,6 +475,43 @@ class MultimodalExtractResponse(BaseModel):
     message: str = "Successfully authenticated, reassembled, and decrypted multimodal secret message."
 
 
+class StrategyComparisonRow(BaseModel):
+    """Row model for cross-strategy comparison table."""
+    strategy_key: str
+    strategy_name: str
+    lambda_param: Optional[float] = None
+    is_novel: bool = False
+    b_image: Optional[int] = None
+    b_audio: Optional[int] = None
+    b_video: Optional[int] = None
+    share_image_pct: Optional[float] = None
+    share_audio_pct: Optional[float] = None
+    share_video_pct: Optional[float] = None
+    concentrated_over_90pct: bool = False
+    concentrated_carrier: Optional[str] = None
+    image_psnr_db: Optional[float] = None
+    audio_snr_db: Optional[float] = None
+    video_psnr_db: Optional[float] = None
+    modeled_risk_proxy: Optional[float] = None
+    image_bpp: Optional[float] = None
+    audio_bps: Optional[float] = None
+    video_bppf: Optional[float] = None
+    status: str = "success"
+    error_message: Optional[str] = None
+
+
+class MultimodalCompareResponse(BaseModel):
+    """Response model for multimodal strategy comparison endpoint."""
+    total_net_capacity_bytes: int
+    payload_bytes: int
+    image_complexity_score: float
+    audio_complexity_score: float
+    video_complexity_score: float
+    rows: List[StrategyComparisonRow]
+    message: str = "Live strategy comparison completed successfully."
+
+
+
 
 
 

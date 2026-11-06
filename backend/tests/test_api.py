@@ -786,6 +786,53 @@ class TestMultimodalAPIEndpoints:
         assert len(data["portfolio_metadata"]["covariance_matrix"]) == 3
         assert data["portfolio_metadata"]["risk_tolerance"] == 0.4
 
+    def test_multimodal_compare_all_strategies(self, client, triad_files):
+        img_b, aud_b, vid_b = triad_files
+        res = client.post(
+            "/api/multimodal/compare",
+            files={
+                "image": ("c.png", img_b, "image/png"),
+                "audio": ("c.wav", aud_b, "audio/wav"),
+                "video": ("c.avi", vid_b, "video/x-msvideo"),
+            },
+            data={"message": "Test Secret for Live Multimodal Strategy Comparison"}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "rows" in data
+        assert len(data["rows"]) == 10
+        assert data["payload_bytes"] > 0
+        assert data["total_net_capacity_bytes"] > 0
+
+        # Verify strategy keys
+        strat_keys = [r["strategy_key"] for r in data["rows"]]
+        assert "fixed" in strat_keys
+        assert "capacity_proportional" in strat_keys
+        assert "adaptive" in strat_keys
+        assert "square_root_law" in strat_keys
+        assert "random_key_seeded" in strat_keys
+        assert "max_complexity_greedy" in strat_keys
+        assert "minimax_risk" in strat_keys
+        assert strat_keys.count("portfolio") == 3
+
+        # Verify portfolio rows have is_novel=True and correct lambda
+        port_rows = [r for r in data["rows"] if r["strategy_key"] == "portfolio"]
+        assert len(port_rows) == 3
+        assert all(r["is_novel"] is True for r in port_rows)
+        lambdas = [r["lambda_param"] for r in port_rows]
+        assert 0.0 in lambdas
+        assert 0.5 in lambdas
+        assert 1.0 in lambdas
+
+        # Verify allocations sum to payload bytes for successful rows
+        for row in data["rows"]:
+            assert row["status"] == "success"
+            alloc_sum = row["b_image"] + row["b_audio"] + row["b_video"]
+            assert alloc_sum == data["payload_bytes"]
+            assert row["modeled_risk_proxy"] is not None
+            assert isinstance(row["concentrated_over_90pct"], bool)
+
+
 
 
 

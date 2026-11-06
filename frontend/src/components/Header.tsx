@@ -8,9 +8,9 @@ interface HeaderProps {
   onSelectTab: (tab: TabType) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
-  activeTab, 
-  onSelectTab 
+export const Header: React.FC<HeaderProps> = ({
+  activeTab,
+  onSelectTab
 }) => {
   return (
     <header className="border-b border-canvas-border bg-canvas-surface/95 backdrop-blur-sm sticky top-0 z-40">
@@ -23,14 +23,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="flex items-baseline space-x-2">
               <span className="font-mono text-sm font-semibold tracking-wider text-canvas-textPrimary uppercase">
-                Adaptive Steganography Workbench
+                CipherVeil: Multimodal Steganography Workbench
               </span>
             </div>
           </div>
 
           <div className="flex items-center space-x-2 text-xs font-mono text-canvas-textMuted hidden sm:flex">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Multimodal Research Platform</span>
           </div>
         </div>
 
@@ -38,11 +36,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center space-x-1 overflow-x-auto py-1.5 -mb-px border-t border-canvas-borderSubtle text-xs font-mono scrollbar-none">
           <button
             onClick={() => onSelectTab('triad')}
-            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'triad'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${activeTab === 'triad'
+              ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+              : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+              }`}
           >
             <Layers className="w-3.5 h-3.5 text-accent" />
             <span>Multimodal Triad</span>
@@ -50,11 +47,10 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onSelectTab('sender')}
-            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'sender'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${activeTab === 'sender'
+              ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+              : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+              }`}
           >
             <ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />
             <span>Sender (Embed)</span>
@@ -62,11 +58,10 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onSelectTab('receiver')}
-            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'receiver'
-                ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
-                : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
-            }`}
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1.5 ${activeTab === 'receiver'
+              ? 'text-canvas-textPrimary bg-canvas-elevated border border-canvas-border shadow-sm'
+              : 'text-canvas-textMuted hover:text-canvas-textSecondary hover:bg-zinc-900/40 border border-transparent'
+              }`}
           >
             <ArrowDownLeft className="w-3.5 h-3.5 text-zinc-400" />
             <span>Receiver (Extract)</span>

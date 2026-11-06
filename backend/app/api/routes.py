@@ -1,11 +1,16 @@
 """FastAPI route definitions for health, status, crypto, and image steganography."""
 
 import base64
+import io
 import json
+import math
 import os
+import wave
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+import numpy as np
+from PIL import Image
 
 from app.config import settings
 from app.core.crypto_utils import (
@@ -63,6 +68,11 @@ from app.allocation.allocator import (
     AllocationError,
     MultimodalCapacityExceededError,
 )
+from app.allocation.risk_portfolio import (
+    build_default_diagonal_covariance,
+    validate_and_regularize_covariance,
+)
+from app.metrics.detectability import compute_carrier_embedding_rates
 from app.allocation.engine import (
     embed_multimodal,
     extract_multimodal,
@@ -97,6 +107,8 @@ from app.schemas import (
     MultimodalAnalyzeResponse,
     MultimodalEmbedResponse,
     MultimodalExtractResponse,
+    StrategyComparisonRow,
+    MultimodalCompareResponse,
 )
 
 router = APIRouter()
@@ -890,7 +902,7 @@ async def analyze_multimodal_triad(
     audio: UploadFile = File(..., description="Candidate WAV audio file"),
     video: UploadFile = File(..., description="Candidate AVI video file"),
     payload_length: Optional[int] = Form(None, description="Optional simulated payload length in bytes"),
-    strategy: Literal["fixed", "adaptive", "portfolio"] = Form("adaptive", description="Simulated allocation strategy"),
+    strategy: str = Form("adaptive", description="Simulated allocation strategy"),
     risk_tolerance: Optional[float] = Form(0.5, ge=0.0, le=1.0, description="Risk tolerance parameter lambda for portfolio strategy (0.0=min variance, 1.0=proportional)")
 ) -> MultimodalAnalyzeResponse:
     # 1. Read files
@@ -979,7 +991,7 @@ async def analyze_multimodal_triad(
 )
 async def embed_payload_multimodal(
     message: str = Form(..., max_length=1_000_000, description="Secret message text to conceal"),
-    strategy: Literal["fixed", "adaptive", "portfolio"] = Form("adaptive", description="Allocation strategy ('fixed', 'adaptive', or 'portfolio')"),
+    strategy: str = Form("adaptive", description="Allocation strategy"),
     risk_tolerance: Optional[float] = Form(0.5, ge=0.0, le=1.0, description="Risk tolerance parameter lambda for portfolio strategy (0.0=min variance, 1.0=proportional)"),
     password: Optional[str] = Form(None, min_length=1, max_length=1024, description="Optional passphrase for key derivation"),
     key: Optional[str] = Form(None, description="Optional 32-byte AES key (base64 or hex)"),
@@ -1191,6 +1203,209 @@ async def extract_payload_multimodal(
         verified=ext_res.verified,
         manifest=ext_res.manifest,
         message="Successfully authenticated, reassembled, and decrypted multimodal secret message."
+    )
+
+
+@router.post(
+    "/multimodal/compare",
+    response_model=MultimodalCompareResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Compare All 8 Multimodal Allocation Strategies",
+    description="Executes live allocation across all 8 strategies for the uploaded carrier triad and current payload, returning comparison metrics and modeled risk proxy."
+)
+async def compare_multimodal_strategies(
+    image: UploadFile = File(..., description="Candidate PNG image carrier"),
+    audio: UploadFile = File(..., description="Candidate WAV audio carrier"),
+    video: UploadFile = File(..., description="Candidate AVI video carrier"),
+    message: Optional[str] = Form(None, max_length=1_000_000, description="Optional secret message text to conceal"),
+    payload_length: Optional[int] = Form(None, description="Optional payload length in bytes"),
+) -> MultimodalCompareResponse:
+    # 1. Read files
+    img_bytes = await image.read()
+    aud_bytes = await audio.read()
+    vid_bytes = await video.read()
+
+    for name, data in [("Image", img_bytes), ("Audio", aud_bytes), ("Video", vid_bytes)]:
+        if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"{name} file exceeds maximum upload size limit."
+            )
+
+    # 2. Profile carriers
+    try:
+        triad_profile = profile_multimodal_triad(img_bytes, aud_bytes, vid_bytes)
+    except (InvalidCarrierError, ProfilingError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Carrier profiling failed: {str(e)}"
+        )
+
+    # 3. Determine target envelope payload length
+    if message and len(message.strip()) > 0:
+        target_payload_bytes = len(message.encode("utf-8")) + 28
+    elif payload_length is not None and payload_length > 0:
+        target_payload_bytes = payload_length
+    else:
+        target_payload_bytes = max(64, min(1000, int(triad_profile.total_usable_capacity_bytes * 0.15)))
+
+    # 4. Extract carrier dimensions for rate & fidelity calculations
+    try:
+        img_pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        w_img, h_img = img_pil.size
+        N_img = max(1, w_img * h_img * 3)
+    except Exception:
+        h_img, w_img = triad_profile.image.height, triad_profile.image.width
+        N_img = max(1, h_img * w_img * 3)
+
+    try:
+        with wave.open(io.BytesIO(aud_bytes), "rb") as wf:
+            raw_aud = wf.readframes(wf.getnframes())
+            s16 = np.frombuffer(raw_aud, dtype=np.int16).astype(np.float64)
+            aud_samples = len(s16)
+            p_signal = float(np.mean(s16 ** 2)) if aud_samples > 0 else 1.0
+    except Exception:
+        aud_samples = max(1, triad_profile.audio.total_samples)
+        p_signal = 1.0
+
+    n_frames = max(1, triad_profile.video.num_frames)
+    h_vid = max(1, triad_profile.video.height)
+    w_vid = max(1, triad_profile.video.width)
+    N_vid = max(1, n_frames * h_vid * w_vid * 3)
+
+    # 5. Build and regularize covariance matrix Sigma
+    cov_raw = build_default_diagonal_covariance(triad_profile)
+    val_cov = validate_and_regularize_covariance(cov_raw)
+    sigma = val_cov.matrix
+
+    # 6. Run all strategies live
+    configs = [
+        ("fixed", None, "Fixed Baseline", False),
+        ("capacity_proportional", None, "Capacity-Proportional", False),
+        ("adaptive", None, "Adaptive Feature-Weighted", False),
+        ("square_root_law", None, "Square-Root-Law (Ker)", False),
+        ("random_key_seeded", None, "Random Key-Seeded (seed=42)", False),
+        ("max_complexity_greedy", None, "Max-Complexity Greedy", False),
+        ("minimax_risk", None, "Minimax Risk", False),
+        ("portfolio", 0.0, "Portfolio (Markowitz, \u03bb=0.00)", True),
+        ("portfolio", 0.5, "Portfolio (Markowitz, \u03bb=0.50)", True),
+        ("portfolio", 1.0, "Portfolio (Markowitz, \u03bb=1.00)", True),
+    ]
+
+    rows: List[StrategyComparisonRow] = []
+
+    for strat_key, param, strat_name, is_novel in configs:
+        try:
+            strat_kwargs: Dict[str, Any] = {}
+            if strat_key == "portfolio" and param is not None:
+                strat_kwargs["risk_tolerance"] = param
+                strat_kwargs["covariance_matrix"] = sigma
+            elif strat_key == "minimax_risk":
+                strat_kwargs["covariance_matrix"] = sigma
+            elif strat_key == "random_key_seeded":
+                strat_kwargs["seed"] = 42
+
+            strategy_inst = get_allocation_strategy(strat_key, **strat_kwargs)
+            plan = strategy_inst.allocate(target_payload_bytes, triad_profile)
+
+            b_I = int(plan.allocations["image"].payload_bytes)
+            b_A = int(plan.allocations["audio"].payload_bytes)
+            b_V = int(plan.allocations["video"].payload_bytes)
+
+            tot_b = b_I + b_A + b_V
+            s_I = round((b_I / tot_b) * 100.0, 1) if tot_b > 0 else 0.0
+            s_A = round((b_A / tot_b) * 100.0, 1) if tot_b > 0 else 0.0
+            s_V = round((b_V / tot_b) * 100.0, 1) if tot_b > 0 else 0.0
+
+            max_s = max(s_I, s_A, s_V)
+            concentrated = max_s > 90.0
+            conc_carrier = "image" if s_I > 90.0 else ("audio" if s_A > 90.0 else ("video" if s_V > 90.0 else None))
+
+            rates = compute_carrier_embedding_rates(
+                b_I, b_A, b_V,
+                (h_img, w_img, 3),
+                aud_samples,
+                (n_frames, h_vid, w_vid, 3),
+            )
+
+            b_vec = np.array([b_I, b_A, b_V], dtype=np.float64)
+            risk_proxy = float(b_vec @ sigma @ b_vec)
+
+            # Image PSNR
+            if b_I > 0:
+                mse_img = (4.0 * (b_I + 48)) / N_img
+                img_psnr = round(10.0 * math.log10(65025.0 / max(1e-12, mse_img)), 2)
+            else:
+                img_psnr = None
+
+            # Audio SNR
+            if b_A > 0:
+                p_noise = (0.5 * (b_A + 48) * 8.0) / max(1, aud_samples)
+                aud_snr = round(10.0 * math.log10(max(1.0, p_signal) / max(1e-12, p_noise)), 2)
+            else:
+                aud_snr = None
+
+            # Video PSNR
+            if b_V > 0:
+                mse_vid = (4.0 * (b_V + 48)) / N_vid
+                vid_psnr = round(10.0 * math.log10(65025.0 / max(1e-12, mse_vid)), 2)
+            else:
+                vid_psnr = None
+
+            rows.append(
+                StrategyComparisonRow(
+                    strategy_key=strat_key,
+                    strategy_name=strat_name,
+                    lambda_param=param,
+                    is_novel=is_novel,
+                    b_image=b_I,
+                    b_audio=b_A,
+                    b_video=b_V,
+                    share_image_pct=s_I,
+                    share_audio_pct=s_A,
+                    share_video_pct=s_V,
+                    concentrated_over_90pct=concentrated,
+                    concentrated_carrier=conc_carrier,
+                    image_psnr_db=img_psnr,
+                    audio_snr_db=aud_snr,
+                    video_psnr_db=vid_psnr,
+                    modeled_risk_proxy=round(risk_proxy, 2),
+                    image_bpp=rates["image_bpp"],
+                    audio_bps=rates["audio_bps"],
+                    video_bppf=rates["video_bppf"],
+                    status="success",
+                    error_message=None,
+                )
+            )
+        except Exception as e:
+            rows.append(
+                StrategyComparisonRow(
+                    strategy_key=strat_key,
+                    strategy_name=strat_name,
+                    lambda_param=param,
+                    is_novel=is_novel,
+                    status="error",
+                    error_message=str(e),
+                )
+            )
+
+    net_cap = max(
+        0,
+        (triad_profile.image.max_usable_payload_bytes - 34)
+        + (triad_profile.audio.max_usable_payload_bytes - 34)
+        + (triad_profile.video.max_usable_payload_bytes - 34)
+    )
+
+    return MultimodalCompareResponse(
+        total_net_capacity_bytes=net_cap,
+        payload_bytes=target_payload_bytes,
+        image_complexity_score=round(triad_profile.image.complexity_score, 4),
+        audio_complexity_score=round(triad_profile.audio.complexity_score, 4),
+        video_complexity_score=round(triad_profile.video.complexity_score, 4),
+        rows=rows,
+        message="Live strategy comparison completed successfully across all 8 allocation models.",
     )
 
 

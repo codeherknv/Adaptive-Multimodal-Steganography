@@ -76,6 +76,11 @@ from app.allocation.allocator import (
     CarrierAllocation,
     MultimodalCapacityExceededError,
 )
+from app.allocation.strategies import (
+    shared_clamp_and_redistribute,
+    normalize_capacities,
+    normalize_complexity_scores,
+)
 from app.allocation.profiler import MultimodalTriadProfile
 from app.core.payload_codec import HEADER_SIZE as ASTG_HEADER_SIZE
 
@@ -565,23 +570,52 @@ class RiskPortfolioStrategy(BaseAllocationStrategy):
 
     def allocate(
         self,
-        payload_len: int,
-        triad_profile: MultimodalTriadProfile,
-        weights_config: Optional[Dict[str, float]] = None,
-    ) -> AllocationPlan:
+        *args: Any,
+        **kwargs: Any
+    ) -> Union[AllocationPlan, List[int]]:
         """Compute exact risk-minimized byte allocation across Image, Audio, and Video.
 
-        Args:
-            payload_len: Total bytes in encrypted envelope B.
-            triad_profile: Profile containing capacities and media complexity metrics.
-            weights_config: Optional dictionary containing 'risk_tolerance' or 'lambda'.
-
-        Returns:
-            AllocationPlan with detailed carrier allocations and portfolio metadata.
-
-        Raises:
-            MultimodalCapacityExceededError: If payload cannot fit within capacities.
+        Supports two interfaces:
+        1. Full plan interface: allocate(payload_len, triad_profile, weights_config=None) -> AllocationPlan
+        2. Common raw interface: allocate(B, capacities, features=None) -> List[int]
         """
+        # Common raw interface: allocate(B, capacities, features=None) -> [b_I, b_A, b_V]
+        if not (len(args) >= 2 and isinstance(args[1], MultimodalTriadProfile)) and "triad_profile" not in kwargs:
+            B = int(args[0]) if args else int(kwargs.get("B", 0))
+            if B < 0:
+                raise AllocationError(f"Payload length cannot be negative: {B}")
+            capacities = args[1] if len(args) > 1 else kwargs.get("capacities", [0, 0, 0])
+            features = args[2] if len(args) > 2 else kwargs.get("features", None)
+
+            caps = normalize_capacities(capacities)
+            dict_caps = {"image": caps[0], "audio": caps[1], "video": caps[2]}
+
+            if self._custom_covariance is not None:
+                cov_raw = self._custom_covariance
+            elif isinstance(features, dict) and "covariance_matrix" in features:
+                cov_raw = np.asarray(features["covariance_matrix"], dtype=np.float64)
+            else:
+                cs = normalize_complexity_scores(features)
+                cov_raw = np.diag([1.0 / (c ** 2) for c in cs])
+
+            val_result = validate_and_regularize_covariance(cov_raw)
+            sigma = val_result.matrix
+
+            risk_tol = self._risk_tolerance
+            if isinstance(features, dict):
+                if "risk_tolerance" in features:
+                    risk_tol = float(np.clip(features["risk_tolerance"], 0.0, 1.0))
+                elif "lambda" in features:
+                    risk_tol = float(np.clip(features["lambda"], 0.0, 1.0))
+            if "risk_tolerance" in kwargs:
+                risk_tol = float(np.clip(kwargs["risk_tolerance"], 0.0, 1.0))
+
+            cont_b, _, _ = solve_portfolio_continuous(dict_caps, B, risk_tol, sigma)
+            return shared_clamp_and_redistribute(cont_b.tolist(), B, caps)
+
+        payload_len = int(args[0]) if args else int(kwargs["payload_len"])
+        triad_profile: MultimodalTriadProfile = args[1] if len(args) > 1 else kwargs["triad_profile"]
+        weights_config: Optional[Dict[str, float]] = args[2] if len(args) > 2 else kwargs.get("weights_config", None)
         # Determine risk tolerance (allow overrides from weights_config)
         risk_tol = self._risk_tolerance
         if weights_config:

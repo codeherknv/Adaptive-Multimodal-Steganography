@@ -32,20 +32,22 @@ optimization models can drop in seamlessly.
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 import math
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from app.core.payload_codec import HEADER_SIZE as ASTG_HEADER_SIZE
 from app.allocation.profiler import MultimodalTriadProfile
-
-
-class AllocationError(Exception):
-    """Base exception for payload allocation errors."""
-    pass
-
-
-class MultimodalCapacityExceededError(AllocationError):
-    """Raised when the payload cannot fit within the available carrier capacities."""
-    pass
+from app.allocation.strategies import (
+    AllocationError,
+    MultimodalCapacityExceededError,
+    shared_clamp_and_redistribute,
+    normalize_capacities,
+    normalize_complexity_scores,
+    CapacityProportionalStrategy,
+    SquareRootLawStrategy,
+    RandomKeySeededStrategy,
+    MaxComplexityGreedyStrategy,
+    MinimaxRiskStrategy,
+)
 
 
 class InvalidStrategyError(AllocationError):
@@ -134,22 +136,14 @@ class BaseAllocationStrategy(ABC):
     @abstractmethod
     def allocate(
         self,
-        payload_len: int,
-        triad_profile: MultimodalTriadProfile,
-        weights_config: Optional[Dict[str, float]] = None,
-    ) -> AllocationPlan:
+        *args: Any,
+        **kwargs: Any
+    ) -> Union[AllocationPlan, List[int]]:
         """Compute exact byte allocation across image, audio, and video carriers.
 
-        Args:
-            payload_len: Total bytes in the encrypted envelope.
-            triad_profile: Profile containing capacities and media features.
-            weights_config: Optional carrier weight tuning dictionary.
-
-        Returns:
-            Validated AllocationPlan.
-
-        Raises:
-            MultimodalCapacityExceededError: If payload cannot fit within capacities.
+        Supports two interfaces:
+        1. Full plan interface: allocate(payload_len, triad_profile, weights_config=None) -> AllocationPlan
+        2. Common raw interface: allocate(B, capacities, features=None) -> List[int]
         """
         pass
 
@@ -172,10 +166,20 @@ class FixedBaselineStrategy(BaseAllocationStrategy):
 
     def allocate(
         self,
-        payload_len: int,
-        triad_profile: MultimodalTriadProfile,
-        weights_config: Optional[Dict[str, float]] = None,
-    ) -> AllocationPlan:
+        *args: Any,
+        **kwargs: Any
+    ) -> Union[AllocationPlan, List[int]]:
+        # Common raw interface: allocate(B, capacities, features=None) -> [b_I, b_A, b_V]
+        if not (len(args) >= 2 and isinstance(args[1], MultimodalTriadProfile)) and "triad_profile" not in kwargs:
+            B = int(args[0]) if args else int(kwargs.get("B", 0))
+            capacities = args[1] if len(args) > 1 else kwargs.get("capacities", [0, 0, 0])
+            caps = normalize_capacities(capacities)
+            return shared_clamp_and_redistribute([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0], B, caps)
+
+        payload_len = int(args[0]) if args else int(kwargs["payload_len"])
+        triad_profile: MultimodalTriadProfile = args[1] if len(args) > 1 else kwargs["triad_profile"]
+        weights_config: Optional[Dict[str, float]] = args[2] if len(args) > 2 else kwargs.get("weights_config", None)
+
         if payload_len < 0:
             raise AllocationError(f"Payload length cannot be negative: {payload_len}")
 
@@ -320,10 +324,23 @@ class AdaptiveFeatureStrategy(BaseAllocationStrategy):
 
     def allocate(
         self,
-        payload_len: int,
-        triad_profile: MultimodalTriadProfile,
-        weights_config: Optional[Dict[str, float]] = None,
-    ) -> AllocationPlan:
+        *args: Any,
+        **kwargs: Any
+    ) -> Union[AllocationPlan, List[int]]:
+        # Common raw interface: allocate(B, capacities, features=None) -> [b_I, b_A, b_V]
+        if not (len(args) >= 2 and isinstance(args[1], MultimodalTriadProfile)) and "triad_profile" not in kwargs:
+            B = int(args[0]) if args else int(kwargs.get("B", 0))
+            capacities = args[1] if len(args) > 1 else kwargs.get("capacities", [0, 0, 0])
+            features = args[2] if len(args) > 2 else kwargs.get("features", None)
+            caps = normalize_capacities(capacities)
+            cs = normalize_complexity_scores(features)
+            weights = [cs[i] * math.log2(1.0 + caps[i]) if caps[i] > 0 else 0.0 for i in range(3)]
+            return shared_clamp_and_redistribute(weights, B, caps)
+
+        payload_len = int(args[0]) if args else int(kwargs["payload_len"])
+        triad_profile: MultimodalTriadProfile = args[1] if len(args) > 1 else kwargs["triad_profile"]
+        weights_config: Optional[Dict[str, float]] = args[2] if len(args) > 2 else kwargs.get("weights_config", None)
+
         if payload_len < 0:
             raise AllocationError(f"Payload length cannot be negative: {payload_len}")
 
@@ -498,7 +515,7 @@ class AdaptiveFeatureStrategy(BaseAllocationStrategy):
 def get_allocation_strategy(
     strategy_name: Union[str, Literal["fixed", "adaptive", "portfolio"]],
     **kwargs: Any
-) -> BaseAllocationStrategy:
+) -> Any:
     """Factory function resolving strategy identifier to its implementation."""
     clean_name = str(strategy_name).strip().lower()
     if clean_name == "fixed":
@@ -510,7 +527,21 @@ def get_allocation_strategy(
         risk_tol = kwargs.get("risk_tolerance", 0.5)
         cov_mat = kwargs.get("covariance_matrix", None)
         return RiskPortfolioStrategy(risk_tolerance=risk_tol, covariance_matrix=cov_mat)
+    elif clean_name in ("capacity_proportional", "proportional"):
+        return CapacityProportionalStrategy()
+    elif clean_name in ("square_root", "sqrt", "square_root_law"):
+        return SquareRootLawStrategy()
+    elif clean_name in ("random", "random_key", "random_seeded", "random_key_seeded"):
+        seed = kwargs.get("seed", 42)
+        return RandomKeySeededStrategy(seed=seed)
+    elif clean_name in ("max_complexity", "greedy", "max_cs", "max_complexity_greedy"):
+        return MaxComplexityGreedyStrategy()
+    elif clean_name in ("minimax", "minimax_risk"):
+        cov_mat = kwargs.get("covariance_matrix", None)
+        return MinimaxRiskStrategy(covariance_matrix=cov_mat)
     else:
         raise InvalidStrategyError(
-            f"Unknown allocation strategy '{strategy_name}'. Supported strategies: 'fixed', 'adaptive', 'portfolio'."
+            f"Unknown allocation strategy '{strategy_name}'. Supported strategies: "
+            f"'fixed', 'adaptive', 'portfolio', 'capacity_proportional', 'square_root_law', "
+            f"'random_key_seeded', 'max_complexity_greedy', 'minimax_risk'."
         )

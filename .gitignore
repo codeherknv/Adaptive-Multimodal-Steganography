@@ -55,5 +55,8 @@ outputs/*
 !outputs/.gitkeep
 results/*
 !results/.gitkeep
+!results/benchmark_summary_table.csv
+!results/figures/
+!results/figures/**
 data/raw/*
 !data/raw/.gitkeep

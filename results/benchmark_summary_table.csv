@@ -1,0 +1,64 @@
+scenario,payload_category,payload_fraction,target_envelope_bytes,actual_payload_bytes,strategy,risk_tolerance,strategy_label,alloc_image_bytes,alloc_audio_bytes,alloc_video_bytes,alloc_image_share_pct,alloc_audio_share_pct,alloc_video_share_pct,image_psnr_db,image_ssim,audio_snr_db,audio_norm_mse,video_avg_psnr_db,video_avg_mse,quadratic_risk_variance,relative_risk_index,alloc_runtime_ms,embed_runtime_ms,exact_recovery_verified
+Scenario 1 (Balanced),Low,0.15,5808,5808,fixed,,Fixed Baseline,1936,1936,1936,33.33,33.33,33.33,56.1,1.0,84.07,,62.99,0.0326,14512983.07,,0.056,185.19,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,adaptive,,Adaptive Feature,2077,1432,2299,35.76,24.66,39.58,55.76,1.0,85.43,,62.3,0.0383,14130036.52,,0.069,137.81,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,portfolio,0.0,Portfolio (lambda=0.00),2323,1461,2024,40.0,25.15,34.85,55.3,1.0,85.38,,62.9,0.0333,13976400.12,0.0,9.78,152.14,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,portfolio,0.25,Portfolio (lambda=0.25),1768,1122,2918,30.44,19.32,50.24,56.44,1.0,86.45,,61.27,0.0485,15433567.23,0.0558,4.212,138.04,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,portfolio,0.5,Portfolio (lambda=0.50),1388,816,3604,23.9,14.05,62.05,57.48,1.0001,87.78,,60.38,0.0596,18532546.11,0.1744,4.363,141.83,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,portfolio,0.75,Portfolio (lambda=0.75),1116,540,4152,19.21,9.3,71.49,58.35,1.0001,89.35,,59.78,0.0684,22262722.61,0.3172,4.234,153.79,True
+Scenario 1 (Balanced),Low,0.15,5808,5808,portfolio,1.0,Portfolio (lambda=1.00),914,293,4601,15.74,5.04,79.22,59.19,1.0001,91.83,,59.34,0.0757,26170661.73,0.4668,4.251,151.15,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,fixed,,Fixed Baseline,6096,1952,7440,39.36,12.6,48.04,51.1,1.0,84.04,,57.28,0.1217,110572890.25,,0.065,158.73,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,adaptive,,Adaptive Feature,6096,1952,7440,39.36,12.6,48.04,51.19,1.0,84.13,,57.28,0.1217,110572890.25,,0.054,142.55,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,portfolio,0.0,Portfolio (lambda=0.00),6096,1952,7440,39.36,12.6,48.04,51.09,1.0,84.16,,57.25,0.1224,110572890.25,0.0,4.685,150.51,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,portfolio,0.25,Portfolio (lambda=0.25),5257,1952,8279,33.94,12.6,53.45,51.84,1.0,84.08,,56.8,0.1359,116382231.67,0.0333,4.134,149.31,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,portfolio,0.5,Portfolio (lambda=0.50),3816,1952,9720,24.64,12.6,62.76,53.16,1.0,84.1,,56.11,0.1591,133668905.95,0.1323,4.087,155.37,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,portfolio,0.75,Portfolio (lambda=0.75),2976,1441,11071,19.21,9.3,71.48,54.24,1.0,85.34,,55.55,0.1813,158291119.09,0.2733,4.752,156.48,True
+Scenario 1 (Balanced),Medium,0.4,15488,15488,portfolio,1.0,Portfolio (lambda=1.00),2438,781,12269,15.74,5.04,79.22,55.06,1.0,87.96,,55.13,0.1996,186095269.62,0.4326,4.287,155.9,True
+Scenario 1 (Balanced),High,0.75,29040,29040,fixed,,Fixed Baseline,6096,1952,20992,20.99,6.72,72.29,51.12,1.0,84.11,,52.78,0.3426,568591064.6,,0.048,139.64,True
+Scenario 1 (Balanced),High,0.75,29040,29040,adaptive,,Adaptive Feature,6096,1952,20992,20.99,6.72,72.29,51.13,1.0,84.1,,52.79,0.3423,568591064.6,,0.051,144.85,True
+Scenario 1 (Balanced),High,0.75,29040,29040,portfolio,0.0,Portfolio (lambda=0.00),6096,1952,20992,20.99,6.72,72.29,51.12,1.0,84.11,,52.79,0.3421,568591064.6,0.0,4.283,152.33,True
+Scenario 1 (Balanced),High,0.75,29040,29040,portfolio,0.25,Portfolio (lambda=0.25),6096,1952,20992,20.99,6.72,72.29,51.14,1.0,84.06,,52.78,0.3425,568591064.6,0.0,3.978,144.09,True
+Scenario 1 (Balanced),High,0.75,29040,29040,portfolio,0.5,Portfolio (lambda=0.50),6096,1952,20992,20.99,6.72,72.29,51.17,1.0,84.05,,52.78,0.3428,568591064.6,0.0,4.766,141.04,True
+Scenario 1 (Balanced),High,0.75,29040,29040,portfolio,0.75,Portfolio (lambda=0.75),5959,1952,21129,20.52,6.72,72.76,51.24,1.0,84.07,,52.76,0.3441,573739651.61,0.0119,4.173,154.83,True
+Scenario 1 (Balanced),High,0.75,29040,29040,portfolio,1.0,Portfolio (lambda=1.00),4572,1464,23004,15.74,5.04,79.21,52.38,1.0,85.27,,52.38,0.3755,654225968.21,0.1974,4.106,159.25,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,fixed,,Fixed Baseline,1936,1936,1936,33.33,33.33,33.33,56.09,0.9977,33.13,,62.98,0.0327,2395956736.7,,0.039,153.92,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,adaptive,,Adaptive Feature,234,264,5310,4.03,4.55,91.43,64.81,0.9996,41.16,,58.72,0.0873,69422883.96,,0.051,154.36,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,portfolio,0.0,Portfolio (lambda=0.00),16,26,5766,0.28,0.45,99.28,72.37,0.9999,47.23,,58.39,0.0943,36724801.71,0.0,4.843,152.65,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,portfolio,0.25,Portfolio (lambda=0.25),328,289,5191,5.65,4.98,89.38,63.45,0.9995,40.85,,58.81,0.0854,92476057.48,0.0041,5.188,145.31,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,portfolio,0.5,Portfolio (lambda=0.50),549,353,4906,9.45,6.08,84.47,61.43,0.9992,40.06,,59.09,0.0801,176632064.32,0.0104,5.83,166.95,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,portfolio,0.75,Portfolio (lambda=0.75),739,341,4728,12.72,5.87,81.4,60.22,0.999,40.17,,59.21,0.078,270656091.38,0.0174,7.072,152.33,True
+Scenario 2 (Asymmetric Video-Dominant),Low,0.15,5808,5808,portfolio,1.0,Portfolio (lambda=1.00),914,293,4601,15.74,5.04,79.22,59.2,0.9988,40.69,,59.3,0.0763,377819379.9,0.0253,4.915,155.23,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,fixed,,Fixed Baseline,6096,1952,7440,39.36,12.6,48.04,51.17,0.9957,33.02,,57.28,0.1216,15832614834.68,,0.044,135.47,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,adaptive,,Adaptive Feature,625,704,14159,4.04,4.55,91.42,60.82,0.9991,37.25,,54.51,0.2302,494142384.29,,0.049,174.93,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,portfolio,0.0,Portfolio (lambda=0.00),42,70,15376,0.27,0.45,99.28,70.48,0.9999,45.45,,54.12,0.2517,261153689.18,0.0,5.31,142.2,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,portfolio,0.25,Portfolio (lambda=0.25),874,772,13842,5.64,4.98,89.37,59.41,0.9988,36.97,,54.59,0.2258,657610815.12,0.0255,5.018,153.31,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,portfolio,0.5,Portfolio (lambda=0.50),1465,940,13083,9.46,6.07,84.47,57.26,0.9982,36.12,,54.81,0.2149,1256634015.15,0.0639,5.043,134.76,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,portfolio,0.75,Portfolio (lambda=0.75),1970,909,12609,12.72,5.87,81.41,56.08,0.9977,36.25,,55.01,0.2051,1923498004.35,0.1068,4.901,148.6,True
+Scenario 2 (Asymmetric Video-Dominant),Medium,0.4,15488,15488,portfolio,1.0,Portfolio (lambda=1.00),2438,781,12269,15.74,5.04,79.22,55.13,0.9973,36.97,,55.12,0.2002,2687882685.89,0.1558,5.144,254.97,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,fixed,,Fixed Baseline,6096,1952,20992,20.99,6.72,72.29,51.15,0.9957,33.1,,52.78,0.343,16255181288.42,,0.044,136.8,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,adaptive,,Adaptive Feature,1172,1321,26547,4.04,4.55,91.42,58.22,0.9985,34.68,,51.77,0.4329,1737899959.25,,0.063,136.64,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,portfolio,0.0,Portfolio (lambda=0.00),79,133,28828,0.27,0.46,99.27,68.64,0.9998,43.47,,51.41,0.4698,918117876.87,0.0,6.354,203.7,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,portfolio,0.25,Portfolio (lambda=0.25),1638,1447,25955,5.64,4.98,89.38,56.77,0.998,34.35,,51.86,0.4233,2310656494.59,0.0908,5.076,150.44,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,portfolio,0.5,Portfolio (lambda=0.50),2746,1762,24532,9.46,6.07,84.48,54.58,0.997,33.52,,52.11,0.4002,4415585757.98,0.228,5.032,150.77,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,portfolio,0.75,Portfolio (lambda=0.75),3694,1705,23641,12.72,5.87,81.41,53.32,0.9964,33.61,,52.3,0.3832,6763498537.13,0.3811,6.106,154.24,True
+Scenario 2 (Asymmetric Video-Dominant),High,0.75,29040,29040,portfolio,1.0,Portfolio (lambda=1.00),4572,1464,23004,15.74,5.04,79.21,52.42,0.996,34.32,,52.38,0.3758,9452050099.38,0.5564,4.92,141.05,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,fixed,,Fixed Baseline,1936,1936,1936,33.33,33.33,33.33,56.05,1.0,87.04,,63.03,0.0323,3002408271.8,,0.035,103.97,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,adaptive,,Adaptive Feature,1764,1952,2092,30.37,33.61,36.02,56.44,1.0,87.03,,62.78,0.0342,2999260723.33,,0.049,122.13,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,portfolio,0.0,Portfolio (lambda=0.00),1928,1952,1928,33.2,33.61,33.2,56.04,1.0,87.01,,63.12,0.0317,2977743923.33,0.0,9.129,287.26,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,portfolio,0.25,Portfolio (lambda=0.25),1467,1952,2389,25.26,33.61,41.13,57.25,1.0,87.06,,62.19,0.0393,3147760723.33,0.0162,16.273,309.28,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,portfolio,0.5,Portfolio (lambda=0.50),1148,1668,2992,19.77,28.72,51.52,58.3,1.0,87.66,,61.17,0.0496,4110905544.46,0.1078,17.688,299.87,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,portfolio,0.75,Portfolio (lambda=0.75),1100,843,3865,18.94,14.51,66.55,58.44,1.0,90.49,,60.09,0.0637,6460035417.54,0.3312,16.143,279.14,True
+Scenario 3 (Asymmetric Audio-Dominant),Low,0.15,5808,5808,portfolio,1.0,Portfolio (lambda=1.00),914,293,4601,15.74,5.04,79.22,59.09,1.0,94.69,,59.34,0.0757,8801928849.17,0.5539,7.881,206.08,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,fixed,,Fixed Baseline,6096,1952,7440,39.36,12.6,48.04,51.13,0.9999,86.99,,57.27,0.122,37009923123.33,,0.129,307.36,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,adaptive,,Adaptive Feature,6096,1952,7440,39.36,12.6,48.04,51.13,0.9999,86.95,,57.26,0.1222,37009923123.33,,0.145,266.26,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,portfolio,0.0,Portfolio (lambda=0.00),6096,1952,7440,39.36,12.6,48.04,51.16,0.9999,86.98,,57.26,0.1222,37009923123.33,0.0,14.475,330.68,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,portfolio,0.25,Portfolio (lambda=0.25),5538,1952,7998,35.76,12.6,51.64,51.59,0.9999,86.99,,56.99,0.1301,37858975923.33,0.0144,14.491,303.62,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,portfolio,0.5,Portfolio (lambda=0.50),4309,1952,9227,27.82,12.6,59.58,52.67,0.9999,86.97,,56.36,0.1502,41486000723.33,0.0759,15.601,299.03,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,portfolio,0.75,Portfolio (lambda=0.75),3080,1952,10456,19.89,12.6,67.51,54.11,1.0,86.97,,55.83,0.1699,47529731123.33,0.1785,17.179,324.26,True
+Scenario 3 (Asymmetric Audio-Dominant),Medium,0.4,15488,15488,portfolio,1.0,Portfolio (lambda=1.00),2438,781,12269,15.74,5.04,79.22,55.06,1.0,90.86,,55.08,0.2018,62589521803.37,0.434,18.707,409.21,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,fixed,,Fixed Baseline,6096,1952,20992,20.99,6.72,72.29,51.15,0.9999,87.05,,52.78,0.3429,191134108723.33,,0.161,354.72,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,adaptive,,Adaptive Feature,6096,1952,20992,20.99,6.72,72.29,51.17,0.9999,86.97,,52.81,0.3404,191134108723.33,,0.076,194.54,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,portfolio,0.0,Portfolio (lambda=0.00),6096,1952,20992,20.99,6.72,72.29,51.15,0.9999,87.0,,52.79,0.3423,191134108723.33,0.0,14.747,343.59,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,portfolio,0.25,Portfolio (lambda=0.25),6096,1952,20992,20.99,6.72,72.29,51.14,0.9999,87.0,,52.8,0.341,191134108723.33,0.0,17.922,313.26,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,portfolio,0.5,Portfolio (lambda=0.50),6096,1952,20992,20.99,6.72,72.29,51.15,0.9999,86.97,,52.77,0.3434,191134108723.33,0.0,15.084,277.02,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,portfolio,0.75,Portfolio (lambda=0.75),6096,1952,20992,20.99,6.72,72.29,51.13,0.9999,86.99,,52.78,0.3428,191134108723.33,0.0,15.666,297.42,True
+Scenario 3 (Asymmetric Audio-Dominant),High,0.75,29040,29040,portfolio,1.0,Portfolio (lambda=1.00),4572,1464,23004,15.74,5.04,79.21,52.39,0.9999,88.17,,52.4,0.3742,220037128156.87,0.1977,16.451,290.63,True
